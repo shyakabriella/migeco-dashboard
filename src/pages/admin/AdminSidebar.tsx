@@ -23,12 +23,16 @@ import {
   Building2,
   Layers,
   History,
+  FolderTree,
+  Tag,
 } from 'lucide-react';
 
 interface SubItem {
   label: string;
   path: string;
   icon?: React.ElementType;
+  hasSubmenu?: boolean;
+  subItems?: SubItem[];
 }
 
 interface NavItem {
@@ -79,7 +83,18 @@ const navigationItems: NavItem[] = [
     hasSubmenu: true,
     subItems: [
       { label: 'Categories', path: '/categories' },
-      { label: 'Document Types', path: '/Docalltype', icon: Layers },
+      { 
+        label: 'Document Types', 
+        path: '/Docalltype', 
+        icon: Layers,
+        hasSubmenu: true,
+        subItems: [
+          { label: 'All Types', path: '/Docalltype' },
+          { label: 'Geological', path: '/organization/geological' },
+          { label: 'Geotechnical', path: '/organization/geotechnical' },
+          { label: 'Construction', path: '/organization/construction' },
+        ]
+      },
       { label: 'Projects', path: '/Projects' },
       { label: 'Departments', path: '/Department' },
       { label: 'Tags', path: '/Tags' },
@@ -180,7 +195,12 @@ export default function AdminSidebar() {
     
     navigationItems.forEach((item) => {
       if (item.subItems) {
-        const isActive = item.subItems.some((sub) => currentPath.startsWith(sub.path));
+        const isActive = item.subItems.some((sub) => {
+          if (sub.subItems) {
+            return sub.subItems.some((nestedSub) => currentPath.startsWith(nestedSub.path));
+          }
+          return currentPath.startsWith(sub.path);
+        });
         if (isActive) {
           initialExpanded.add(item.label);
         }
@@ -214,7 +234,12 @@ export default function AdminSidebar() {
   const isParentActive = (item: NavItem) => {
     if (item.path && isActivePath(item.path)) return true;
     if (item.subItems) {
-      return item.subItems.some((sub) => isActivePath(sub.path));
+      return item.subItems.some((sub) => {
+        if (sub.subItems) {
+          return sub.subItems.some((nestedSub) => isActivePath(nestedSub.path));
+        }
+        return isActivePath(sub.path);
+      });
     }
     return false;
   };
@@ -274,6 +299,54 @@ export default function AdminSidebar() {
                 <div className="mt-1 ml-9 space-y-1">
                   {item.subItems.map((sub) => {
                     const subIsActive = isActivePath(sub.path);
+                    const subIsExpanded = expandedMenus.has(sub.label);
+                    
+                    // If this subItem has its own submenu (nested)
+                    if (sub.hasSubmenu && sub.subItems) {
+                      return (
+                        <div key={sub.label}>
+                          <button
+                            onClick={() => toggleMenu(sub.label)}
+                            className={`w-full flex items-center justify-between text-left py-2 px-3 rounded-lg transition-colors text-xs ${
+                              subIsActive || sub.subItems.some((nested) => isActivePath(nested.path))
+                                ? 'bg-slate-800 text-white font-medium'
+                                : 'text-slate-500 hover:text-white hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <span>{sub.label}</span>
+                            {subIsExpanded ? (
+                              <ChevronDown className="w-3 h-3" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3" />
+                            )}
+                          </button>
+                          
+                          {/* Nested submenu items */}
+                          {subIsExpanded && (
+                            <div className="mt-1 ml-3 space-y-1">
+                              {sub.subItems.map((nestedSub) => {
+                                const nestedIsActive = isActivePath(nestedSub.path);
+                                return (
+                                  <button
+                                    key={nestedSub.label}
+                                    onClick={() => handleNavigation(nestedSub.path)}
+                                    className={`w-full text-left py-1.5 px-3 rounded-lg transition-colors text-[11px] ${
+                                      nestedIsActive
+                                        ? 'bg-indigo-600/20 text-indigo-400 font-medium'
+                                        : 'text-slate-500 hover:text-white hover:bg-slate-800/50'
+                                    }`}
+                                  >
+                                    {nestedSub.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    
+                    // Regular subItem without nested submenu
                     return (
                       <button
                         key={sub.label}

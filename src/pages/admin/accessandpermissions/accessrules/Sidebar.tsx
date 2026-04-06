@@ -12,7 +12,7 @@ import {
   ChevronDown,
   Lock
 } from 'lucide-react';
-import { cn } from '../../../../utils/cn';
+import { cn } from '../../../../../../../src/utils/cn';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', hasSub: true },

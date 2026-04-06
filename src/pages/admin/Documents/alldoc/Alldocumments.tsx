@@ -6,8 +6,9 @@ import {
   Bell,
   ChevronDown
 } from 'lucide-react';
-import { cn } from '../../../../utils/cn';
+import { cn } from '../../../../../../../src/utils/cn';
 import AdminSidebar from '../../AdminSidebar';
+import { Link } from 'react-router-dom';
 
 const documents = [
   { id: 1, name: 'Geo_Survey_Site_Alpha_Final.pdf', type: 'PDF Document', project: 'Site Alpha', date: 'Oct 26, 2023 14:30', author: 'AM' },
@@ -48,7 +49,7 @@ export default function Alldocuments() {
           <div className="flex justify-end gap-2 mb-6">
             <button className="px-4 py-2 border border-gray-700 rounded-md text-sm flex items-center gap-2"><Filter size={16}/> Filter</button>
             <button className="px-4 py-2 border border-gray-700 rounded-md text-sm flex items-center gap-2"><Folder size={16}/> New Folder</button>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm flex items-center gap-2"><UploadCloud size={16}/> Upload</button>
+            <Link to="/upload&digitization/upload" className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm flex items-center gap-2"><UploadCloud size={16}/> Upload</Link>
           </div>
 
           <div className="bg-[#12161f] border border-gray-800 rounded-lg overflow-hidden">

@@ -15,6 +15,7 @@ import {
   Eye
 } from 'lucide-react';
 import AdminSidebar from "../../AdminSidebar";
+import { Link } from 'react-router-dom';
 
 type FileItem = {
   name: string;
@@ -187,10 +188,10 @@ export default function Mydocs() {
                   <FolderPlus size={14} />
                   New Folder
                 </button>
-                <button className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-500 flex items-center gap-2">
+                <Link to="/upload&digitization/upload" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-500 flex items-center gap-2">
                   <UploadCloud size={14} />
                   Upload
-                </button>
+                </Link>
               </div>
 
               <div className="overflow-hidden rounded-xl border border-slate-800/50 bg-[#141426]">

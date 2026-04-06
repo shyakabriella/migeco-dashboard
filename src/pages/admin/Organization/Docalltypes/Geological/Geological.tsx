@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import AdminSidebar from '../../AdminSidebar';
+import AdminSidebar from '../../../AdminSidebar';
 
 interface Document {
   id: string;

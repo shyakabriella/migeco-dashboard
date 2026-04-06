@@ -1,5 +1,5 @@
 import { Search, LayoutDashboard, FileText, UploadCloud, Building2, ChevronDown, Bell, Settings, User, BarChart3, ShieldCheck, FileClock, History, MapPin, Database } from 'lucide-react';
-import { cn } from '../../../utils/cn';
+import { cn } from '../../../../../../src/utils/cn';
 import AdminSidebar from '../AdminSidebar';
 
 const SidebarItem = ({ icon: Icon, label, active = false, hasSubmenu = false }: { icon: any, label: string, active?: boolean, hasSubmenu?: boolean }) => (

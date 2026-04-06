@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { cn } from "../../../../utils/cn"
+import { cn } from "../../../../../../../src/utils/cn"
 import AdminSidebar from "../../AdminSidebar";
 
 type AuditAction = "Opened" | "Edited" | "Downloaded";

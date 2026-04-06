@@ -213,34 +213,14 @@ function Mytask() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] flex">
+    <div className="flex h-screen bg-[#0a0a14] overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#0f111a] border-r border-slate-800 flex flex-col">
-        {/* Logo */}
-        
-
-        {/* Navigation */}
-        <AdminSidebar />
-
-        {/* Storage */}
-        <div className="p-4 border-t border-slate-800">
-          <div className="bg-slate-900 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-400 text-xs font-medium">Storage</span>
-              <span className="text-blue-400 text-xs font-semibold">78%</span>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1.5 mb-2">
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 h-1.5 rounded-full" style={{ width: '78%' }}></div>
-            </div>
-            <p className="text-slate-600 text-xs">Using 3.9 TB of 5 TB</p>
-          </div>
-        </div>
-      </aside>
+      <AdminSidebar />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0a0a14]">
+        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0a0a14] flex-shrink-0">
           {/* Search */}
           <div className="flex-1 max-w-xl">
             <div className="relative">
@@ -346,7 +326,7 @@ function Mytask() {
             ))}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

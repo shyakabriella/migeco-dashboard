@@ -235,13 +235,13 @@ function Recent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] flex">
+    <div className="flex h-screen bg-[#0a0a14] overflow-hidden">
       {/* Sidebar */}
          <AdminSidebar />
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-slate-800/50 flex items-center justify-between px-6 bg-[#0a0a14]">
+        <header className="h-16 border-b border-slate-800/50 flex items-center justify-between px-6 bg-[#0a0a14] flex-shrink-0">
           {/* Search Bar */}
           <div className="flex-1 max-w-2xl">
             <div className="relative">
@@ -336,7 +336,7 @@ function Recent() {
             </button>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

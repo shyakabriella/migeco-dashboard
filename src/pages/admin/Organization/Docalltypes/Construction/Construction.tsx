@@ -1,4 +1,4 @@
-import AdminSidebar from '../../AdminSidebar';
+import AdminSidebar from '../../../AdminSidebar';
 import Header from "./components/Header";
 import StatsCards from "./components/StatsCards";
 import ReportsTable from "./components/ReportsTable";
