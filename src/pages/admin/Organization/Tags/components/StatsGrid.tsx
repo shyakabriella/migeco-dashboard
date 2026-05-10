@@ -1,6 +1,6 @@
 import type { ElementType } from 'react';
 import { Tag, Zap, TrendingUp, Trash2 } from 'lucide-react';
-import { cn } from '../../../../../../../../src/utils/cn';
+import { cn } from '../../../../../utils/cn';
 
 interface StatsCardProps {
   label: string;

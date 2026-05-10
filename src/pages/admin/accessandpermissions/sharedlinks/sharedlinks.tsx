@@ -20,7 +20,7 @@ import {
   RefreshCw,
   ExternalLink
 } from 'lucide-react';
-import { cn } from '../../../../../../../src/utils/cn';
+import { cn } from '../../../../utils/cn';
 import AdminSidebar from '../../AdminSidebar';
 const SidebarItem = ({ icon: Icon, label, active, subItems, isOpen }: { icon: any, label: string, active?: boolean, subItems?: string[], isOpen?: boolean }) => {
   return (

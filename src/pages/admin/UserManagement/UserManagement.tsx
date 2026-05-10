@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cn } from '../../../../../../src/utils/cn';
+import { cn } from '../../../utils/cn';
 import AdminSidebar from '../AdminSidebar';
 
 // Icons as SVG components

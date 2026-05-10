@@ -1,5 +1,5 @@
 import { Search, Plus, Filter, Edit2, Copy, Trash2, ChevronLeft, ChevronRight, Users, Folder, Lock, FileCode, Play } from 'lucide-react';
-import { cn } from '../../../../../../../src/utils/cn';
+import { cn } from '../../../../utils/cn';
 interface Rule {
   id: string;
   name: string;
