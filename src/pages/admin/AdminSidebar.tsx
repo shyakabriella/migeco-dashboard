@@ -4,11 +4,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   FileText,
-  UploadCloud,
   Users,
   Search,
   BarChart3,
-  HelpCircle,
   ChevronDown,
   ChevronRight,
   Building2,
@@ -52,14 +50,6 @@ const navigationItems: NavItem[] = [
       "/shareddocs",
       "/favorite",
       "/archive",
-    ],
-  },
-
-  {
-    icon: UploadCloud,
-    label: "Upload & Digitization",
-    path: "/upload&digitization",
-    activePaths: [
       "/upload&digitization",
       "/upload&digitization/bulk",
       "/upload&digitization/upload",
@@ -112,26 +102,6 @@ const navigationItems: NavItem[] = [
     icon: Users,
     label: "Users Management",
     path: "/usermanagement",
-  },
-
-  {
-    icon: HelpCircle,
-    label: "Help & Support",
-    hasSubmenu: true,
-    subItems: [
-      {
-        label: "FAQs",
-        path: "/helpandsupport/faqs",
-      },
-      {
-        label: "Manual",
-        path: "/helpandsupport/manual",
-      },
-      {
-        label: "Submit Ticket",
-        path: "/helpandsupport/submitticket",
-      },
-    ],
   },
 ];
 
@@ -216,10 +186,6 @@ export default function AdminSidebar() {
             currentPath === "/Mytasks" ||
             currentPath === "/Recentactivity"
           );
-        }
-
-        if (path === "/upload&digitization") {
-          return currentPath.startsWith("/upload&digitization");
         }
 
         if (path === "/organization") {

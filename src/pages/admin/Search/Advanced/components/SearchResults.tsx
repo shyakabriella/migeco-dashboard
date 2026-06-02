@@ -1,340 +1,545 @@
-import { useState } from "react";
-import { MoreVertical, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import {
+  Eye,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  MoreVertical,
+  Search,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import type { DmsDocument } from "../../../../../services/dmsApi";
 
 interface SearchResultsProps {
+  results: DmsDocument[];
+  loading: boolean;
   currentPage: number;
-  setCurrentPage: (p: number) => void;
+  setCurrentPage: (page: number) => void;
   sortBy: string;
-  setSortBy: (s: string) => void;
+  setSortBy: (value: string) => void;
 }
 
-interface Document {
-  id: number;
-  icon: string;
-  iconBg: string;
-  name: string;
-  modified: string;
-  project: string;
-  projectColor: string;
-  type: string;
-  relevance: number;
-  relevanceColor: string;
-  snippet: string;
-  keyword: string;
-  snippetSuffix: string;
+const pageSize = 8;
+
+function toLower(value?: string | null): string {
+  return value ? String(value).toLowerCase() : "";
 }
 
-const documents: Document[] = [
-  {
-    id: 1,
-    icon: "PDF",
-    iconBg: "bg-red-600",
-    name: "Geological_Survey_Report_Alpha_v2.pdf",
-    modified: "Modified: Oct 24, 2023 by Sarah L.",
-    project: "Site Alpha",
-    projectColor: "bg-[#1e2a3a] text-[#7dd3fc] border border-[#2a3f5a]",
-    type: "Report",
-    relevance: 95,
-    relevanceColor: "from-green-500 to-green-400",
-    snippet: '...found "',
-    keyword: "soil composition",
-    snippetSuffix: '" on page 4...',
-  },
-  {
-    id: 2,
-    icon: "DOC",
-    iconBg: "bg-blue-600",
-    name: "Soil_Test_Results_Lab_B.docx",
-    modified: "Modified: Oct 20, 2023 by Lab Team",
-    project: "Project Beta",
-    projectColor: "bg-[#1e2a3a] text-[#7dd3fc] border border-[#2a3f5a]",
-    type: "Lab Result",
-    relevance: 82,
-    relevanceColor: "from-green-500 to-green-400",
-    snippet: "...analysis of ",
-    keyword: "soil",
-    snippetSuffix: " density and moisture...",
-  },
-  {
-    id: 3,
-    icon: "XLS",
-    iconBg: "bg-green-700",
-    name: "Excavation_Log_Q3.xlsx",
-    modified: "Modified: Sep 15, 2023 by Mike R.",
-    project: "Site Alpha",
-    projectColor: "bg-[#1e2a3a] text-[#7dd3fc] border border-[#2a3f5a]",
-    type: "Log",
-    relevance: 45,
-    relevanceColor: "from-yellow-500 to-yellow-400",
-    snippet: "...tags: ",
-    keyword: "soil",
-    snippetSuffix: ", excavation, heavy...",
-  },
-  {
-    id: 4,
-    icon: "JPG",
-    iconBg: "bg-purple-600",
-    name: "Site_Photo_Sector_4_Soil.jpg",
-    modified: "Modified: Oct 01, 2023 by Drone #4",
-    project: "Site Alpha",
-    projectColor: "bg-[#1e2a3a] text-[#7dd3fc] border border-[#2a3f5a]",
-    type: "Photo",
-    relevance: 30,
-    relevanceColor: "from-blue-500 to-blue-400",
-    snippet: "...metadata: ",
-    keyword: "soil",
-    snippetSuffix: " erosion visible...",
-  },
-];
+function getReadableStatus(value?: string | null): string {
+  if (!value) return "Unknown";
 
-function RelevanceBar({
-  value,
-  colorClass,
-}: {
-  value: number;
-  colorClass: string;
-}) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(date?: string | null): string {
+  if (!date) return "Not updated";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "Not updated";
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function getDocumentTitle(document: DmsDocument): string {
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 w-24 h-1.5 bg-[#1e2433] rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${colorClass}`}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-      <span
-        className={`text-xs font-semibold ${
-          value >= 80
-            ? "text-green-400"
-            : value >= 50
-            ? "text-yellow-400"
-            : "text-blue-400"
-        }`}
-      >
-        {value}%
-      </span>
-    </div>
+    document.original_file_name ||
+    document.title ||
+    document.document_code ||
+    `Document #${document.id}`
   );
 }
 
-function DocIcon({ icon, bg }: { icon: string; bg: string }) {
-  return (
-    <div
-      className={`w-8 h-8 rounded-md ${bg} flex items-center justify-center text-[9px] font-bold text-white shrink-0`}
-    >
-      {icon}
-    </div>
-  );
+function getUploaderName(document: DmsDocument): string {
+  return document.uploader?.name || "Unknown uploader";
+}
+
+function getProjectName(document: DmsDocument): string {
+  return document.project?.name || "No Project";
+}
+
+function getDocumentType(document: DmsDocument): string {
+  if (document.document_type) {
+    return getReadableStatus(document.document_type);
+  }
+
+  if (document.extension) {
+    return document.extension.toUpperCase();
+  }
+
+  return "File";
+}
+
+function getFileBadge(document: DmsDocument): {
+  label: string;
+  className: string;
+} {
+  const extension = toLower(document.extension);
+
+  if (extension === "pdf") {
+    return {
+      label: "PDF",
+      className: "bg-red-600 text-white",
+    };
+  }
+
+  if (["doc", "docx"].includes(extension)) {
+    return {
+      label: "DOC",
+      className: "bg-blue-600 text-white",
+    };
+  }
+
+  if (["xls", "xlsx", "csv"].includes(extension)) {
+    return {
+      label: "XLS",
+      className: "bg-emerald-600 text-white",
+    };
+  }
+
+  if (["jpg", "jpeg", "png", "webp"].includes(extension)) {
+    return {
+      label: extension.toUpperCase(),
+      className: "bg-purple-600 text-white",
+    };
+  }
+
+  if (["dwg", "dxf", "zip", "rar"].includes(extension)) {
+    return {
+      label: extension.toUpperCase(),
+      className: "bg-orange-600 text-white",
+    };
+  }
+
+  return {
+    label: extension ? extension.toUpperCase() : "FILE",
+    className: "bg-slate-700 text-white",
+  };
+}
+
+function getFileIcon(document: DmsDocument) {
+  const extension = toLower(document.extension);
+
+  if (["jpg", "jpeg", "png", "webp", "tif", "tiff"].includes(extension)) {
+    return <FileImage size={18} />;
+  }
+
+  if (["xls", "xlsx", "csv"].includes(extension)) {
+    return <FileSpreadsheet size={18} />;
+  }
+
+  if (["dwg", "dxf", "zip", "rar"].includes(extension)) {
+    return <FileArchive size={18} />;
+  }
+
+  return <FileText size={18} />;
+}
+
+function getStatusClass(status?: string | null): string {
+  switch (toLower(status)) {
+    case "active":
+    case "clean":
+    case "safe":
+    case "extracted":
+    case "encrypted":
+    case "analyzed":
+      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+
+    case "uploaded":
+    case "pending":
+    case "pending_scan":
+    case "scanning":
+    case "not_tested":
+    case "not_extracted":
+    case "not_encrypted":
+    case "not_analyzed":
+      return "border-yellow-500/20 bg-yellow-500/10 text-yellow-300";
+
+    case "quarantined":
+    case "suspicious":
+      return "border-orange-500/20 bg-orange-500/10 text-orange-300";
+
+    case "infected":
+    case "rejected":
+    case "failed":
+    case "unsafe":
+    case "blocked":
+      return "border-red-500/20 bg-red-500/10 text-red-300";
+
+    case "archived":
+      return "border-slate-500/20 bg-slate-500/10 text-slate-300";
+
+    default:
+      return "border-slate-500/20 bg-slate-500/10 text-slate-300";
+  }
+}
+
+function getTags(document: DmsDocument): string[] {
+  if (Array.isArray(document.tags)) {
+    return document.tags.filter((tag): tag is string => typeof tag === "string");
+  }
+
+  if (typeof document.tags === "string") {
+    return document.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function getSecurityScore(document: DmsDocument): number {
+  let score = 0;
+
+  if (toLower(document.scan_status) === "clean") score += 25;
+  if (toLower(document.sandbox_status) === "safe") score += 25;
+  if (toLower(document.plaintext_status) === "extracted") score += 20;
+  if (toLower(document.encryption_status) === "encrypted") score += 20;
+  if (toLower(document.ai_status) === "analyzed") score += 10;
+
+  return score;
+}
+
+function sortDocuments(documents: DmsDocument[], sortBy: string): DmsDocument[] {
+  const copiedDocuments = [...documents];
+
+  if (sortBy === "Oldest") {
+    return copiedDocuments.sort((first, second) => {
+      const firstDate = new Date(
+        first.updated_at || first.created_at || 0
+      ).getTime();
+
+      const secondDate = new Date(
+        second.updated_at || second.created_at || 0
+      ).getTime();
+
+      return firstDate - secondDate;
+    });
+  }
+
+  if (sortBy === "Title") {
+    return copiedDocuments.sort((first, second) =>
+      getDocumentTitle(first).localeCompare(getDocumentTitle(second))
+    );
+  }
+
+  if (sortBy === "Security") {
+    return copiedDocuments.sort(
+      (first, second) => getSecurityScore(second) - getSecurityScore(first)
+    );
+  }
+
+  return copiedDocuments.sort((first, second) => {
+    const firstDate = new Date(
+      first.updated_at || first.created_at || 0
+    ).getTime();
+
+    const secondDate = new Date(
+      second.updated_at || second.created_at || 0
+    ).getTime();
+
+    return secondDate - firstDate;
+  });
 }
 
 export default function SearchResults({
+  results,
+  loading,
   currentPage,
   setCurrentPage,
   sortBy,
   setSortBy,
 }: SearchResultsProps) {
-  const [selected, setSelected] = useState<number[]>([]);
-  const [allSelected, setAllSelected] = useState(false);
-  const [showSortMenu, setShowSortMenu] = useState(false);
-
-  const totalResults = 24;
-  const totalPages = 3;
-
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected([]);
-      setAllSelected(false);
-    } else {
-      setSelected(documents.map((d) => d.id));
-      setAllSelected(true);
-    }
-  };
-
-  const toggleRow = (id: number) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
+  const sortedResults = sortDocuments(results, sortBy);
+  const totalPages = Math.max(1, Math.ceil(sortedResults.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const visibleResults = sortedResults.slice(startIndex, startIndex + pageSize);
 
   return (
-    <div>
-      {/* Results Header */}
-      <div className="flex items-center justify-between mb-3 px-1">
+    <div className="rounded-xl border border-[#1e2a3a] bg-[#111827]">
+      <div className="flex flex-col gap-4 border-b border-[#1e2a3a] px-5 py-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[#8b96a8] uppercase tracking-widest">
-            Search Results
+          <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#8b96a8]">
+            Database Results
           </span>
-          <span className="text-xs font-bold text-white bg-[#1e2433] rounded px-2 py-0.5">
-            {totalResults} Found
+
+          <span className="rounded bg-[#1e2a3a] px-2 py-0.5 text-xs font-semibold text-white">
+            {loading ? "Loading..." : `${results.length} Found`}
           </span>
         </div>
+
         <div className="flex items-center gap-2 text-xs text-[#8b96a8]">
           <span>Sort by:</span>
-          <div className="relative">
-            <button
-              onClick={() => setShowSortMenu(!showSortMenu)}
-              className="flex items-center gap-1 text-white font-medium hover:text-indigo-400 transition-colors"
-            >
-              {sortBy}
-              <ChevronDown size={12} />
-            </button>
-            {showSortMenu && (
-              <div className="absolute right-0 top-7 bg-[#111827] border border-[#1e2a3a] rounded-lg shadow-xl z-10 min-w-[120px]">
-                {["Relevance", "Date", "Name", "Type"].map((opt) => (
-                  <button
-                    key={opt}
-                    onClick={() => {
-                      setSortBy(opt);
-                      setShowSortMenu(false);
-                    }}
-                    className={`block w-full text-left px-3 py-2 text-xs hover:bg-[#1e2433] transition-colors
-                      ${opt === sortBy ? "text-indigo-400" : "text-[#8b96a8]"}`}
+
+          <select
+            value={sortBy}
+            onChange={(event) => {
+              setSortBy(event.target.value);
+              setCurrentPage(1);
+            }}
+            className="rounded-lg border border-[#1e2a3a] bg-[#0d1117] px-2 py-1.5 text-xs font-semibold text-white outline-none focus:border-indigo-500"
+          >
+            <option>Newest</option>
+            <option>Oldest</option>
+            <option>Title</option>
+            <option>Security</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1100px] text-left text-sm">
+          <thead className="border-b border-[#1e2a3a] text-[11px] uppercase tracking-wider text-[#9aa7bd]">
+            <tr>
+              <th className="w-12 px-5 py-4">
+                <input type="checkbox" readOnly className="rounded" />
+              </th>
+              <th className="px-5 py-4">Document Name</th>
+              <th className="px-5 py-4">Project</th>
+              <th className="px-5 py-4">Type</th>
+              <th className="px-5 py-4">Security Pipeline</th>
+              <th className="px-5 py-4 text-right">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-12">
+                  <div className="flex items-center justify-center gap-3 text-sm text-[#8b96a8]">
+                    <Loader2 size={20} className="animate-spin" />
+                    Loading real documents from database...
+                  </div>
+                </td>
+              </tr>
+            ) : visibleResults.length > 0 ? (
+              visibleResults.map((document) => {
+                const badge = getFileBadge(document);
+                const securityScore = getSecurityScore(document);
+                const tags = getTags(document);
+
+                return (
+                  <tr
+                    key={String(document.id)}
+                    className="border-b border-[#1e2a3a] transition-colors last:border-b-0 hover:bg-[#0d1117]/60"
                   >
-                    {opt}
-                  </button>
-                ))}
-              </div>
+                    <td className="px-5 py-4">
+                      <input type="checkbox" readOnly className="rounded" />
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-1 flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-[10px] font-bold ${badge.className}`}
+                          title={getDocumentType(document)}
+                        >
+                          {badge.label}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400">
+                              {getFileIcon(document)}
+                            </span>
+
+                            <p className="max-w-[360px] truncate font-semibold text-white">
+                              {getDocumentTitle(document)}
+                            </p>
+                          </div>
+
+                          <p className="mt-1 text-xs text-[#8b96a8]">
+                            Modified:{" "}
+                            {formatDate(document.updated_at || document.created_at)}{" "}
+                            by {getUploaderName(document)}
+                          </p>
+
+                          {document.document_code && (
+                            <p className="mt-1 text-[11px] text-[#64748b]">
+                              Code: {document.document_code}
+                            </p>
+                          )}
+
+                          {tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {tags.slice(0, 4).map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span className="inline-flex rounded-md border border-blue-400/20 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
+                        {getProjectName(document)}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4 text-[#8b96a8]">
+                      {getDocumentType(document)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-44 overflow-hidden rounded-full bg-[#1e2a3a]">
+                            <div
+                              className={`h-full rounded-full ${
+                                securityScore >= 80
+                                  ? "bg-emerald-500"
+                                  : securityScore >= 50
+                                  ? "bg-yellow-500"
+                                  : "bg-red-500"
+                              }`}
+                              style={{ width: `${securityScore}%` }}
+                            />
+                          </div>
+
+                          <span
+                            className={`text-xs font-semibold ${
+                              securityScore >= 80
+                                ? "text-emerald-400"
+                                : securityScore >= 50
+                                ? "text-yellow-400"
+                                : "text-red-400"
+                            }`}
+                          >
+                            {securityScore}%
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(
+                              document.status
+                            )}`}
+                          >
+                            {getReadableStatus(document.status)}
+                          </span>
+
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(
+                              document.scan_status
+                            )}`}
+                          >
+                            Scan: {getReadableStatus(document.scan_status)}
+                          </span>
+
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(
+                              document.sandbox_status
+                            )}`}
+                          >
+                            Sandbox: {getReadableStatus(document.sandbox_status)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          to="/alldocuments"
+                          className="inline-flex items-center gap-2 rounded-lg border border-[#1e2a3a] bg-[#0d1117] px-3 py-2 text-xs text-[#8b96a8] hover:border-indigo-500/40 hover:text-white"
+                        >
+                          <Eye size={14} />
+                          Open
+                        </Link>
+
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-[#8b96a8] hover:bg-[#0d1117] hover:text-white"
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={6} className="px-5 py-12 text-center">
+                  <Search size={32} className="mx-auto mb-3 text-[#4a5568]" />
+
+                  <h3 className="text-sm font-semibold text-white">
+                    No document matched
+                  </h3>
+
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#8b96a8]">
+                    Try another project, category, date range, status, keyword,
+                    or enable OCR/plaintext content search after extraction.
+                  </p>
+                </td>
+              </tr>
             )}
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
 
-      {/* Table */}
-      <div className="bg-[#111827] border border-[#1e2a3a] rounded-xl overflow-hidden">
-        {/* Table Head */}
-        <div className="grid grid-cols-[40px_1fr_140px_100px_200px_80px] items-center border-b border-[#1e2a3a] px-4 py-2.5">
-          <div>
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleAll}
-              className="w-3.5 h-3.5 rounded accent-indigo-500 cursor-pointer"
-            />
-          </div>
-          <div className="text-[10px] font-semibold text-[#8b96a8] uppercase tracking-wider pl-10">
-            Document Name
-          </div>
-          <div className="text-[10px] font-semibold text-[#8b96a8] uppercase tracking-wider">
-            Project
-          </div>
-          <div className="text-[10px] font-semibold text-[#8b96a8] uppercase tracking-wider">
-            Type
-          </div>
-          <div className="text-[10px] font-semibold text-[#8b96a8] uppercase tracking-wider">
-            Relevance / Match
-          </div>
-          <div className="text-[10px] font-semibold text-[#8b96a8] uppercase tracking-wider text-right">
-            Actions
-          </div>
-        </div>
+      {!loading && results.length > 0 && (
+        <div className="flex flex-col gap-3 border-t border-[#1e2a3a] px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <p className="text-xs text-[#8b96a8]">
+            Showing {startIndex + 1}-
+            {Math.min(startIndex + visibleResults.length, results.length)} of{" "}
+            {results.length} database result{results.length === 1 ? "" : "s"}
+          </p>
 
-        {/* Rows */}
-        {documents.map((doc, idx) => (
-          <div
-            key={doc.id}
-            className={`grid grid-cols-[40px_1fr_140px_100px_200px_80px] items-center px-4 py-3 border-b border-[#1e2433] last:border-b-0 transition-colors
-              ${
-                selected.includes(doc.id)
-                  ? "bg-indigo-900/10"
-                  : idx % 2 === 0
-                  ? "bg-transparent hover:bg-[#0d1117]/60"
-                  : "bg-[#0d1117]/30 hover:bg-[#0d1117]/60"
-              }`}
-          >
-            {/* Checkbox */}
-            <div>
-              <input
-                type="checkbox"
-                checked={selected.includes(doc.id)}
-                onChange={() => toggleRow(doc.id)}
-                className="w-3.5 h-3.5 rounded accent-indigo-500 cursor-pointer"
-              />
-            </div>
-
-            {/* Name + Icon */}
-            <div className="flex items-center gap-3 min-w-0">
-              <DocIcon icon={doc.icon} bg={doc.iconBg} />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-white truncate leading-tight">
-                  {doc.name}
-                </p>
-                <p className="text-[10px] text-[#8b96a8] mt-0.5">{doc.modified}</p>
-              </div>
-            </div>
-
-            {/* Project */}
-            <div>
-              <span
-                className={`text-[10px] font-semibold px-2.5 py-1 rounded-md ${doc.projectColor}`}
-              >
-                {doc.project}
-              </span>
-            </div>
-
-            {/* Type */}
-            <div className="text-xs text-[#8b96a8]">{doc.type}</div>
-
-            {/* Relevance */}
-            <div>
-              <RelevanceBar
-                value={doc.relevance}
-                colorClass={doc.relevanceColor}
-              />
-              <p className="text-[10px] text-[#8b96a8] mt-1 truncate">
-                {doc.snippet}
-                <span className="text-yellow-400 font-semibold">{doc.keyword}</span>
-                {doc.snippetSuffix}
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end">
-              <button className="w-7 h-7 rounded-md hover:bg-[#1e2433] flex items-center justify-center text-[#8b96a8] hover:text-white transition-colors">
-                <MoreVertical size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between mt-4 px-1">
-        <span className="text-xs text-[#8b96a8]">
-          Showing 1-{documents.length} of {totalResults} results
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage === 1}
-            className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#111827] border border-[#1e2a3a] text-[#8b96a8] hover:text-white hover:border-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          {[1, 2, 3].map((page) => (
+          <div className="flex items-center gap-2">
             <button
-              key={page}
-              onClick={() => setCurrentPage(page)}
-              className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors border
-                ${
-                  currentPage === page
-                    ? "bg-indigo-600 border-indigo-600 text-white"
-                    : "bg-[#111827] border-[#1e2a3a] text-[#8b96a8] hover:text-white hover:border-indigo-500"
-                }`}
+              type="button"
+              disabled={safeCurrentPage <= 1}
+              onClick={() => setCurrentPage(safeCurrentPage - 1)}
+              className="rounded-lg border border-[#1e2a3a] px-3 py-1.5 text-xs text-[#8b96a8] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {page}
+              Previous
             </button>
-          ))}
-          <button
-            onClick={() =>
-              setCurrentPage(Math.min(totalPages, currentPage + 1))
-            }
-            disabled={currentPage === totalPages}
-            className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#111827] border border-[#1e2a3a] text-[#8b96a8] hover:text-white hover:border-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronRight size={14} />
-          </button>
+
+            {Array.from({ length: totalPages }).slice(0, 5).map((_, index) => {
+              const page = index + 1;
+
+              return (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs ${
+                    safeCurrentPage === page
+                      ? "border-indigo-500 bg-indigo-600 text-white"
+                      : "border-[#1e2a3a] text-[#8b96a8] hover:text-white"
+                  }`}
+                >
+                  {page}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              disabled={safeCurrentPage >= totalPages}
+              onClick={() => setCurrentPage(safeCurrentPage + 1)}
+              className="rounded-lg border border-[#1e2a3a] px-3 py-1.5 text-xs text-[#8b96a8] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
