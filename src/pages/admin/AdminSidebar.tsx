@@ -2,151 +2,128 @@ import { useState } from "react";
 import type { ElementType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  FileText,
-  Users,
-  Search,
   BarChart3,
-  ChevronDown,
-  ChevronRight,
   Building2,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  LayoutDashboard,
   LogOut,
+  Search,
+  Users,
 } from "lucide-react";
 
-interface SubItem {
-  label: string;
-  path: string;
-  icon?: ElementType;
-  hasSubmenu?: boolean;
-  subItems?: SubItem[];
-}
-
-interface NavItem {
+interface NavigationItem {
   icon: ElementType;
   label: string;
-  path?: string;
+  path: string;
   activePaths?: string[];
-  hasSubmenu?: boolean;
-  subItems?: SubItem[];
+}
+
+interface NavigationSection {
+  title: string;
+  items: NavigationItem[];
 }
 
 const LOGIN_PATH = "/login";
 
-const navigationItems: NavItem[] = [
+const navigationSections: NavigationSection[] = [
   {
-    icon: LayoutDashboard,
-    label: "Dashboard",
-    path: "/dashboard",
-    activePaths: ["/dashboard", "/Mytasks", "/Recentactivity"],
-  },
-
-  {
-    icon: FileText,
-    label: "Documents",
-    path: "/alldocuments",
-    activePaths: [
-      "/alldocuments",
-      "/mydocs",
-      "/shareddocs",
-      "/favorite",
-      "/archive",
-      "/upload&digitization",
-      "/upload&digitization/bulk",
-      "/upload&digitization/upload",
-      "/upload&digitization/scan",
-      "/upload&digitization/history",
+    title: "Workspace",
+    items: [
+      {
+        icon: LayoutDashboard,
+        label: "Dashboard",
+        path: "/dashboard",
+        activePaths: ["/dashboard", "/Mytasks", "/Recentactivity"],
+      },
+      {
+        icon: FileText,
+        label: "Documents",
+        path: "/alldocuments",
+        activePaths: [
+          "/alldocuments",
+          "/mydocs",
+          "/shareddocs",
+          "/favorite",
+          "/archive",
+          "/upload&digitization",
+          "/upload&digitization/bulk",
+          "/upload&digitization/upload",
+          "/upload&digitization/scan",
+          "/upload&digitization/history",
+        ],
+      },
+      // {
+      //   icon: Building2,
+      //   label: "Organization",
+      //   path: "/organization",
+      //   activePaths: [
+      //     "/organization",
+      //     "/categories",
+      //     "/Docalltype",
+      //     "/organization/geological",
+      //     "/organization/geotechnical",
+      //     "/organization/construction",
+      //     "/Projects",
+      //     "/projects",
+      //     "/Department",
+      //     "/Tags",
+      //   ],
+      // },
+      {
+        icon: Search,
+        label: "Search & Retrieval",
+        path: "/search",
+        activePaths: [
+          "/search",
+          "/Smartsearch",
+          "/Advancedfilter",
+          "/SavedSearch",
+        ],
+      },
+      {
+        icon: BarChart3,
+        label: "Reports",
+        path: "/reports",
+        activePaths: [
+          "/reports",
+          "/reports/overview",
+          "/reports/docreport",
+          "/reports/uploadrep",
+          "/reports/depreport",
+          "/reports/versioningrep",
+          "/reports/accessreport",
+        ],
+      },
     ],
   },
-
   {
-    icon: Building2,
-    label: "Organization",
-    path: "/organization",
-    activePaths: [
-      "/organization",
-      "/categories",
-      "/Docalltype",
-      "/organization/geological",
-      "/organization/geotechnical",
-      "/organization/construction",
-      "/Projects",
-      "/projects",
-      "/Department",
-      "/Tags",
+    title: "Management",
+    items: [
+      {
+        icon: Users,
+        label: "Users Management",
+        path: "/usermanagement",
+        activePaths: ["/usermanagement", "/users"],
+      },
     ],
-  },
-
-  {
-    icon: Search,
-    label: "Search & Retrieval",
-    path: "/search",
-    activePaths: ["/search", "/Smartsearch", "/Advancedfilter", "/SavedSearch"],
-  },
-
-  {
-    icon: BarChart3,
-    label: "Reports",
-    path: "/reports",
-    activePaths: [
-      "/reports",
-      "/reports/overview",
-      "/reports/docreport",
-      "/reports/uploadrep",
-      "/reports/depreport",
-      "/reports/versioningrep",
-      "/reports/accessreport",
-    ],
-  },
-
-  {
-    icon: Users,
-    label: "Users Management",
-    path: "/usermanagement",
   },
 ];
+
+function pathMatches(currentPath: string, path: string): boolean {
+  if (currentPath === path) {
+    return true;
+  }
+
+  return currentPath.startsWith(`${path}/`);
+}
 
 export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(() => {
-    const initialExpanded = new Set<string>();
-    const currentPath = location.pathname;
-
-    navigationItems.forEach((item) => {
-      if (!item.hasSubmenu || !item.subItems) return;
-
-      const shouldExpand = item.subItems.some((subItem) => {
-        if (subItem.subItems) {
-          return subItem.subItems.some((nestedSubItem) =>
-            currentPath.startsWith(nestedSubItem.path)
-          );
-        }
-
-        return currentPath.startsWith(subItem.path);
-      });
-
-      if (shouldExpand) {
-        initialExpanded.add(item.label);
-      }
-    });
-
-    return initialExpanded;
-  });
-
-  function toggleMenu(label: string): void {
-    setExpandedMenus((previous) => {
-      const next = new Set(previous);
-
-      if (next.has(label)) {
-        next.delete(label);
-      } else {
-        next.add(label);
-      }
-
-      return next;
-    });
-  }
+  const [collapsed, setCollapsed] = useState<boolean>(false);
 
   function handleNavigation(path: string): void {
     navigate(path);
@@ -165,240 +142,167 @@ export default function AdminSidebar() {
     });
   }
 
-  function isActivePath(path?: string): boolean {
-    if (!path) return false;
-
-    return location.pathname === path;
-  }
-
-  function isParentActive(item: NavItem): boolean {
+  function isItemActive(item: NavigationItem): boolean {
     const currentPath = location.pathname;
 
-    if (item.path && currentPath === item.path) {
+    if (pathMatches(currentPath, item.path)) {
       return true;
     }
 
-    if (item.activePaths) {
-      return item.activePaths.some((path) => {
-        if (path === "/dashboard") {
-          return (
-            currentPath === "/dashboard" ||
-            currentPath === "/Mytasks" ||
-            currentPath === "/Recentactivity"
-          );
-        }
-
-        if (path === "/organization") {
-          return (
-            currentPath === "/organization" ||
-            currentPath === "/categories" ||
-            currentPath === "/Docalltype" ||
-            currentPath.startsWith("/organization/") ||
-            currentPath === "/Projects" ||
-            currentPath.startsWith("/Projects/") ||
-            currentPath === "/projects" ||
-            currentPath.startsWith("/projects/") ||
-            currentPath === "/Department" ||
-            currentPath === "/Tags"
-          );
-        }
-
-        if (path === "/search") {
-          return (
-            currentPath === "/search" ||
-            currentPath === "/Smartsearch" ||
-            currentPath === "/Advancedfilter" ||
-            currentPath === "/SavedSearch"
-          );
-        }
-
-        if (path === "/reports") {
-          return currentPath.startsWith("/reports");
-        }
-
-        return currentPath === path || currentPath.startsWith(`${path}/`);
-      });
-    }
-
-    if (item.subItems) {
-      return item.subItems.some((subItem) => {
-        if (subItem.subItems) {
-          return subItem.subItems.some((nestedSubItem) =>
-            isActivePath(nestedSubItem.path)
-          );
-        }
-
-        return isActivePath(subItem.path);
-      });
-    }
-
-    return false;
+    return (
+      item.activePaths?.some((path) => pathMatches(currentPath, path)) ?? false
+    );
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-slate-800 bg-[#0f111a] text-sm text-slate-400">
-      <div className="flex items-center gap-2 border-b border-slate-800 p-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-          <span className="text-xs font-bold text-white">M</span>
-        </div>
+    <aside
+      className={`flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-300 ${
+        collapsed ? "w-[82px]" : "w-[250px]"
+      }`}
+    >
+      <div
+        className={`flex h-[78px] items-center border-b border-slate-100 ${
+          collapsed ? "justify-center px-3" : "justify-between px-5"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => handleNavigation("/dashboard")}
+          className="flex min-w-0 items-center gap-3"
+          title="MIGECO DMS"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-sm shadow-blue-200">
+            M
+          </div>
 
-        <span className="text-lg font-bold tracking-wider text-white">
-          MIGECO
-        </span>
+          {!collapsed && (
+            <div className="min-w-0 text-left">
+              <p className="truncate text-base font-bold tracking-wide text-slate-900">
+                MIGECO
+              </p>
+              <p className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Document System
+              </p>
+            </div>
+          )}
+        </button>
+
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          const isExpanded = expandedMenus.has(item.label);
-          const active = isParentActive(item);
+      {collapsed && (
+        <div className="flex justify-center border-b border-slate-100 py-3">
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
-          return (
-            <div key={item.label}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (item.hasSubmenu) {
-                    toggleMenu(item.label);
-                    return;
-                  }
+      <nav className="custom-scrollbar flex-1 overflow-y-auto px-3 py-5">
+        {navigationSections.map((section, sectionIndex) => (
+          <div
+            key={section.title}
+            className={sectionIndex > 0 ? "mt-7" : ""}
+          >
+            {!collapsed && (
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                {section.title}
+              </p>
+            )}
 
-                  if (item.path) {
-                    handleNavigation(item.path);
-                  }
-                }}
-                className={`group flex w-full items-center justify-between rounded-lg p-2.5 transition-colors ${
-                  active
-                    ? "bg-indigo-600/10 text-indigo-400"
-                    : "hover:bg-slate-800/50 hover:text-white"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon
-                    className={`h-5 w-5 ${
-                      active ? "text-indigo-400" : "group-hover:text-white"
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const active = isItemActive(item);
+
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleNavigation(item.path)}
+                    title={collapsed ? item.label : undefined}
+                    className={`group relative flex w-full items-center rounded-xl transition-all duration-200 ${
+                      collapsed
+                        ? "justify-center px-2 py-3"
+                        : "gap-3 px-3 py-2.5"
+                    } ${
+                      active
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
-                  />
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-blue-600" />
+                    )}
 
-                  <span className="font-medium">{item.label}</span>
-                </div>
+                    <Icon
+                      className={`h-[19px] w-[19px] shrink-0 ${
+                        active
+                          ? "text-blue-600"
+                          : "text-slate-400 group-hover:text-slate-700"
+                      }`}
+                    />
 
-                {item.hasSubmenu &&
-                  (isExpanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  ))}
-              </button>
-
-              {item.hasSubmenu && item.subItems && isExpanded && (
-                <div className="ml-9 mt-1 space-y-1">
-                  {item.subItems.map((subItem) => {
-                    const subIsActive = isActivePath(subItem.path);
-                    const subIsExpanded = expandedMenus.has(subItem.label);
-
-                    if (subItem.hasSubmenu && subItem.subItems) {
-                      return (
-                        <div key={subItem.label}>
-                          <button
-                            type="button"
-                            onClick={() => toggleMenu(subItem.label)}
-                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${
-                              subIsActive ||
-                              subItem.subItems.some((nestedSubItem) =>
-                                isActivePath(nestedSubItem.path)
-                              )
-                                ? "bg-slate-800 font-medium text-white"
-                                : "text-slate-500 hover:bg-slate-800/50 hover:text-white"
-                            }`}
-                          >
-                            <span>{subItem.label}</span>
-
-                            {subIsExpanded ? (
-                              <ChevronDown className="h-3 w-3" />
-                            ) : (
-                              <ChevronRight className="h-3 w-3" />
-                            )}
-                          </button>
-
-                          {subIsExpanded && (
-                            <div className="ml-3 mt-1 space-y-1">
-                              {subItem.subItems.map((nestedSubItem) => {
-                                const nestedIsActive = isActivePath(
-                                  nestedSubItem.path
-                                );
-
-                                return (
-                                  <button
-                                    type="button"
-                                    key={nestedSubItem.label}
-                                    onClick={() =>
-                                      handleNavigation(nestedSubItem.path)
-                                    }
-                                    className={`w-full rounded-lg px-3 py-1.5 text-left text-[11px] transition-colors ${
-                                      nestedIsActive
-                                        ? "bg-indigo-600/20 font-medium text-indigo-400"
-                                        : "text-slate-500 hover:bg-slate-800/50 hover:text-white"
-                                    }`}
-                                  >
-                                    {nestedSubItem.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <button
-                        type="button"
-                        key={subItem.label}
-                        onClick={() => handleNavigation(subItem.path)}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors ${
-                          subIsActive
-                            ? "bg-slate-800 font-medium text-white"
-                            : "text-slate-500 hover:bg-slate-800/50 hover:text-white"
+                    {!collapsed && (
+                      <span
+                        className={`truncate text-sm ${
+                          active ? "font-semibold" : "font-medium"
                         }`}
                       >
-                        {subItem.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                        {item.label}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </nav>
 
-      <div className="mt-auto space-y-3 border-t border-slate-800 p-4">
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-slate-400">Storage</span>
-            <span className="text-xs font-bold text-white">78%</span>
+      <div className="border-t border-slate-100 p-3">
+        {!collapsed && (
+          <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-xs font-semibold text-slate-800">
+              MIGECO Workspace
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Secure document management
+            </p>
           </div>
-
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-            <div
-              className="h-full rounded-full bg-indigo-500 transition-all duration-300"
-              style={{ width: "78%" }}
-            />
-          </div>
-
-          <p className="mt-2 text-[10px] text-slate-500">
-            Using 3.9 TB of 5 TB
-          </p>
-        </div>
+        )}
 
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
+          title={collapsed ? "Logout" : undefined}
+          className={`flex w-full items-center rounded-xl border border-transparent text-red-600 transition-colors hover:border-red-100 hover:bg-red-50 ${
+            collapsed
+              ? "justify-center px-2 py-3"
+              : "justify-center gap-2 px-4 py-2.5"
+          }`}
         >
-          <LogOut className="h-4 w-4" />
-          Logout
+          <LogOut className="h-[18px] w-[18px]" />
+
+          {!collapsed && (
+            <span className="text-sm font-semibold">Logout</span>
+          )}
         </button>
       </div>
     </aside>

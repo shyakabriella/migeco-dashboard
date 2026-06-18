@@ -1,48 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ElementType } from "react";
-import { NavLink } from "react-router-dom";
+import type { ElementType, ReactNode } from "react";
+import { Link, NavLink } from "react-router-dom";
 import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart3,
   Bell,
-  Eye,
-  FolderOpen,
-  Database,
-  Download,
-  Calendar,
-  FilePlus,
-  ArrowUpRight,
-  ArrowDownRight,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
+  Database,
+  Download,
   FileText,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  LockKeyhole,
+  Radar,
+  RefreshCcw,
+  ScanSearch,
+  ShieldAlert,
+  ShieldCheck,
   UploadCloud,
   UsersRound,
-  GitBranch,
-  ShieldCheck,
-  Loader2,
-  RefreshCcw,
-  AlertTriangle,
-  LockKeyhole,
-  BrainCircuit,
-  Radar,
-  ScanSearch,
 } from "lucide-react";
 import {
-  AreaChart,
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts";
+
 import AdminSidebar from "../AdminSidebar";
+
 import {
   apiRequest,
   getCurrentUser,
   getDocuments,
   getProjects,
 } from "../../../services/dmsApi";
+
 import type {
   DmsDocument,
   ProjectSummary,
@@ -63,8 +64,6 @@ type AiSummary = {
   not_analyzed_documents?: number;
   pending_ai_documents?: number;
   failed_ai_documents?: number;
-  restricted_suggested?: number;
-  confidential_suggested?: number;
 };
 
 type EncryptionSummary = {
@@ -93,32 +92,6 @@ type PlaintextSummary = {
   failed_documents?: number;
 };
 
-type ReportRow = {
-  name: string;
-  type: string;
-  typeColor: string;
-  date: string;
-  user: string;
-  userInitials: string;
-  userColor: string;
-  fileType: string;
-  fileIconColor: string;
-  description: string;
-};
-
-type ActivityChartRow = {
-  name: string;
-  uploads: number;
-  updated: number;
-};
-
-type DocumentTypeRow = {
-  name: string;
-  count: number;
-  percent: number;
-  color: string;
-};
-
 type DashboardData = {
   user: UserSummary | null;
   documents: DmsDocument[];
@@ -129,6 +102,26 @@ type DashboardData = {
   plaintextSummary: PlaintextSummary | null;
 };
 
+type ActivityChartRow = {
+  name: string;
+  uploads: number;
+  updates: number;
+};
+
+type DocumentTypeRow = {
+  name: string;
+  count: number;
+  percentage: number;
+};
+
+type ReportShortcut = {
+  title: string;
+  description: string;
+  path: string;
+  icon: ElementType;
+  value: string;
+};
+
 const reportTabs = [
   {
     label: "Overview",
@@ -136,39 +129,30 @@ const reportTabs = [
     icon: BarChart3,
   },
   {
-    label: "Document Usage Report",
+    label: "Document Usage",
     path: "/reports/docreport",
     icon: FileText,
   },
   {
-    label: "Upload & Activity Report",
+    label: "Upload Activity",
     path: "/reports/uploadrep",
     icon: UploadCloud,
   },
   {
-    label: "Department/Project Reports",
+    label: "Projects",
     path: "/reports/depreport",
     icon: UsersRound,
   },
-  {
-    label: "Versioning Report",
-    path: "/reports/versioningrep",
-    icon: GitBranch,
-  },
-  {
-    label: "Access/Permission Report",
-    path: "/reports/accessreport",
-    icon: ShieldCheck,
-  },
-];
-
-const typeColors = [
-  "bg-emerald-500",
-  "bg-purple-500",
-  "bg-orange-500",
-  "bg-pink-500",
-  "bg-blue-500",
-  "bg-yellow-500",
+  // {
+  //   label: "Versioning",
+  //   path: "/reports/versioningrep",
+  //   icon: GitBranch,
+  // },
+  // {
+  //   label: "Access & Permissions",
+  //   path: "/reports/accessreport",
+  //   icon: ShieldCheck,
+  // },
 ];
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -184,7 +168,7 @@ function getReadableStatus(value?: string | null): string {
 
   return value
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatNumber(value: number): string {
@@ -196,60 +180,20 @@ function formatBytes(bytes?: number | null): string {
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = bytes;
-  let index = 0;
+  let unitIndex = 0;
 
-  while (size >= 1024 && index < units.length - 1) {
-    size = size / 1024;
-    index += 1;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
   }
 
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
-}
-
-function formatDate(date?: string | null): string {
-  if (!date) return "Not available";
-
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) return "Not available";
-
-  return parsed.toLocaleString(undefined, {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatShortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-  });
-}
-
-function getDateDaysAgo(days: number): Date {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  return date;
-}
-
-function isWithinRange(date?: string | null, days = 30): boolean {
-  if (!date) return false;
-
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) return false;
-
-  return parsed >= getDateDaysAgo(days);
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function getInitials(name?: string | null): string {
   if (!name) return "DU";
 
-  const names = name.trim().split(" ").filter(Boolean);
+  const names = name.trim().split(/\s+/).filter(Boolean);
 
   if (names.length === 1) {
     return names[0].slice(0, 2).toUpperCase();
@@ -265,27 +209,26 @@ function getUserName(user: UserSummary | null): string {
 function getRoleName(user: UserSummary | null): string {
   const role = (user as { role?: unknown } | null)?.role;
 
-  if (!role) return "Reports Controller";
+  if (!role) return "Reports User";
 
   if (typeof role === "string") {
     return getReadableStatus(role);
   }
 
   if (typeof role === "object" && role !== null) {
-    const roleObject = role as { name?: string; slug?: string };
-    return roleObject.name || getReadableStatus(roleObject.slug);
+    const roleObject = role as {
+      name?: string;
+      slug?: string;
+    };
+
+    return (
+      roleObject.name ||
+      getReadableStatus(roleObject.slug) ||
+      "Reports User"
+    );
   }
 
-  return "Reports Controller";
-}
-
-function getDocumentTitle(document: DmsDocument): string {
-  return (
-    document.original_file_name ||
-    document.title ||
-    document.document_code ||
-    `Document #${document.id}`
-  );
+  return "Reports User";
 }
 
 function getDocumentType(document: DmsDocument): string {
@@ -297,11 +240,71 @@ function getDocumentType(document: DmsDocument): string {
     return document.extension.toUpperCase();
   }
 
-  return "Unknown Type";
+  return "Other";
 }
 
-function getProjectName(document: DmsDocument): string {
-  return document.project?.name || "No Project";
+function getStartDate(days: number): Date {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - (days - 1));
+
+  return date;
+}
+
+function getDateDaysAgo(days: number): Date {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - days);
+
+  return date;
+}
+
+function isWithinRange(date?: string | null, days = 30): boolean {
+  if (!date) return false;
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  return parsed >= getStartDate(days);
+}
+
+function countInWindow(
+  documents: DmsDocument[],
+  field: "created_at" | "updated_at",
+  days: number
+): number {
+  return documents.filter((document) =>
+    isWithinRange(document[field], days)
+  ).length;
+}
+
+function countPreviousWindow(
+  documents: DmsDocument[],
+  field: "created_at" | "updated_at",
+  days: number
+): number {
+  const currentStart = getStartDate(days);
+  const previousStart = getDateDaysAgo(days * 2 - 1);
+
+  return documents.filter((document) => {
+    const value = document[field];
+
+    if (!value) return false;
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return false;
+
+    return date >= previousStart && date < currentStart;
+  }).length;
+}
+
+function getTrend(current: number, previous: number): number {
+  if (previous <= 0 && current > 0) return 100;
+  if (previous <= 0) return 0;
+
+  return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
 function isClean(document: DmsDocument): boolean {
@@ -332,54 +335,27 @@ function isBlocked(document: DmsDocument): boolean {
   );
 }
 
-function getTrend(current: number, previous: number): number {
-  if (previous <= 0 && current > 0) return 100;
-  if (previous <= 0) return 0;
+function getLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
-  return Math.round(((current - previous) / previous) * 1000) / 10;
-}
-
-function countInWindow(
-  documents: DmsDocument[],
-  field: "created_at" | "updated_at",
-  days: number
-): number {
-  return documents.filter((document) => isWithinRange(document[field], days)).length;
-}
-
-function countPreviousWindow(
-  documents: DmsDocument[],
-  field: "created_at" | "updated_at",
-  days: number
-): number {
-  const now = new Date();
-  const currentStart = getDateDaysAgo(days);
-  const previousStart = getDateDaysAgo(days * 2);
-
-  return documents.filter((document) => {
-    const value = document[field];
-
-    if (!value) return false;
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) return false;
-
-    return date >= previousStart && date < currentStart && date <= now;
-  }).length;
+  return `${year}-${month}-${day}`;
 }
 
 function buildActivityChartData(
   documents: DmsDocument[],
   rangeDays: number
 ): ActivityChartRow[] {
-  const rows: ActivityChartRow[] = [];
-  const interval = rangeDays <= 30 ? 5 : rangeDays <= 90 ? 15 : 60;
+  const interval =
+    rangeDays <= 7 ? 1 : rangeDays <= 30 ? 5 : rangeDays <= 90 ? 15 : 60;
 
-  for (let day = rangeDays - 1; day >= 0; day -= interval) {
-    const start = getDateDaysAgo(day);
+  const rows: ActivityChartRow[] = [];
+
+  for (let offset = rangeDays - 1; offset >= 0; offset -= interval) {
+    const start = getDateDaysAgo(offset);
     const end = new Date(start);
-    end.setDate(start.getDate() + interval);
+    end.setDate(start.getDate() + interval - 1);
     end.setHours(23, 59, 59, 999);
 
     const uploads = documents.filter((document) => {
@@ -390,7 +366,7 @@ function buildActivityChartData(
       return createdAt >= start && createdAt <= end;
     }).length;
 
-    const updated = documents.filter((document) => {
+    const updates = documents.filter((document) => {
       if (!document.updated_at) return false;
 
       const updatedAt = new Date(document.updated_at);
@@ -399,16 +375,23 @@ function buildActivityChartData(
     }).length;
 
     rows.push({
-      name: formatShortDate(start),
+      name: start.toLocaleDateString(undefined, {
+        month: "short",
+        day: "2-digit",
+      }),
       uploads,
-      updated,
+      updates,
     });
   }
 
-  return rows.length > 0 ? rows : [{ name: "Today", uploads: 0, updated: 0 }];
+  return rows.length > 0
+    ? rows
+    : [{ name: "Today", uploads: 0, updates: 0 }];
 }
 
-function buildDocumentTypeRows(documents: DmsDocument[]): DocumentTypeRow[] {
+function buildDocumentTypeRows(
+  documents: DmsDocument[]
+): DocumentTypeRow[] {
   const counts = new Map<string, number>();
 
   documents.forEach((document) => {
@@ -420,84 +403,18 @@ function buildDocumentTypeRows(documents: DmsDocument[]): DocumentTypeRow[] {
 
   return Array.from(counts.entries())
     .sort((first, second) => second[1] - first[1])
-    .slice(0, 6)
-    .map(([name, count], index) => ({
+    .slice(0, 5)
+    .map(([name, count]) => ({
       name,
       count,
-      percent: Math.round((count / total) * 100),
-      color: typeColors[index % typeColors.length],
+      percentage: Math.round((count / total) * 100),
     }));
 }
 
-function buildRecentReports(
-  documents: DmsDocument[],
-  projects: ProjectSummary[],
-  user: UserSummary | null,
-  rangeDays: number
-): ReportRow[] {
-  const generatedBy = getUserName(user);
-  const userInitials = getInitials(generatedBy);
-  const now = formatDate(new Date().toISOString());
-
-  const uploadedInRange = countInWindow(documents, "created_at", rangeDays);
-  const updatedInRange = countInWindow(documents, "updated_at", rangeDays);
-  const activeProjects = projects.filter(
-    (project) => toLower(project.status) === "active"
-  ).length;
-
-  return [
-    {
-      name: "Document Usage Report",
-      type: "Usage",
-      typeColor: "text-blue-400 bg-blue-400/10",
-      date: now,
-      user: generatedBy,
-      userInitials,
-      userColor: "bg-indigo-600",
-      fileType: `${formatNumber(documents.length)} documents`,
-      fileIconColor: "text-blue-400 bg-blue-400/10",
-      description: "Generated from current document metadata and workflow status.",
-    },
-    {
-      name: "Upload & Activity Report",
-      type: "Activity",
-      typeColor: "text-purple-400 bg-purple-400/10",
-      date: now,
-      user: generatedBy,
-      userInitials,
-      userColor: "bg-purple-600",
-      fileType: `${formatNumber(uploadedInRange)} uploads / ${formatNumber(updatedInRange)} updates`,
-      fileIconColor: "text-purple-400 bg-purple-400/10",
-      description: `Calculated from documents created or updated in the last ${rangeDays} days.`,
-    },
-    {
-      name: "Department/Project Report",
-      type: "Project",
-      typeColor: "text-emerald-400 bg-emerald-400/10",
-      date: now,
-      user: generatedBy,
-      userInitials,
-      userColor: "bg-emerald-600",
-      fileType: `${formatNumber(projects.length)} projects / ${formatNumber(activeProjects)} active`,
-      fileIconColor: "text-emerald-400 bg-emerald-400/10",
-      description: "Project-based document distribution and active project count.",
-    },
-    {
-      name: "Access & Security Report",
-      type: "Security",
-      typeColor: "text-orange-400 bg-orange-400/10",
-      date: now,
-      user: generatedBy,
-      userInitials,
-      userColor: "bg-orange-600",
-      fileType: `${formatNumber(documents.filter(isBlocked).length)} blocked / unsafe`,
-      fileIconColor: "text-orange-400 bg-orange-400/10",
-      description: "Based on scan, sandbox, encryption, plaintext, and AI readiness statuses.",
-    },
-  ];
-}
-
-async function safeRequest<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+async function safeRequest<T>(
+  request: () => Promise<T>,
+  fallback: T
+): Promise<T> {
   try {
     return await request();
   } catch {
@@ -518,65 +435,6 @@ function unwrapData<T>(response: unknown, fallback: T): T {
   return (response as T) ?? fallback;
 }
 
-type KPICardProps = {
-  title: string;
-  value: string;
-  trend?: number;
-  trendValue?: string;
-  icon: ElementType;
-  iconColor: string;
-  iconBg: string;
-  subtitle?: string;
-};
-
-function KPICard({
-  title,
-  value,
-  trend,
-  trendValue,
-  icon: Icon,
-  iconColor,
-  iconBg,
-  subtitle,
-}: KPICardProps) {
-  return (
-    <div className="flex flex-col justify-between rounded-2xl border border-[#2d3145] bg-[#1e2130] p-5">
-      <div className="mb-4 flex items-start justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          {title}
-        </h3>
-
-        <div className={`flex h-8 w-8 items-center justify-center rounded ${iconBg}`}>
-          <Icon className={`h-4 w-4 ${iconColor}`} />
-        </div>
-      </div>
-
-      <div className="mb-2">
-        <span className="text-2xl font-bold text-white">{value}</span>
-      </div>
-
-      {trend !== undefined && (
-        <div className="flex items-center gap-2 text-xs">
-          <span
-            className={`flex items-center font-medium ${
-              trend >= 0 ? "text-emerald-400" : "text-red-400"
-            }`}
-          >
-            {trend >= 0 ? (
-              <ArrowUpRight className="mr-0.5 h-3 w-3" />
-            ) : (
-              <ArrowDownRight className="mr-0.5 h-3 w-3" />
-            )}
-            {trendValue}
-          </span>
-
-          <span className="text-gray-500">{subtitle}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Header({
   user,
   loading,
@@ -587,48 +445,69 @@ function Header({
   onRefresh: () => void;
 }) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#1f2231] bg-[#161824] px-6 text-sm">
-      <div className="flex items-center gap-3 font-medium text-gray-400">
-        <span className="text-white">Reports</span>
-        <ChevronRight className="h-4 w-4" />
-        <span className="flex items-center gap-2 text-gray-400">
-          <BarChart3 className="h-4 w-4" />
-          Overview
-        </span>
+    <header className="flex min-h-[78px] shrink-0 items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 lg:px-8">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+          <span>Reports</span>
+          <ChevronRight size={13} />
+          <span className="text-slate-700">Overview</span>
+        </div>
+
+        <h1 className="mt-1 text-lg font-bold text-slate-900">
+          Reports & Analytics
+        </h1>
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-[#2d3145] bg-[#1e2130] px-3 py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-[#2a2e41] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 size={16} className="animate-spin" />
           ) : (
-            <RefreshCcw className="h-4 w-4" />
+            <RefreshCcw size={16} />
           )}
-          Refresh
+
+          <span className="hidden sm:inline">Refresh</span>
         </button>
 
-        <button className="relative text-gray-400 hover:text-white">
-          <Bell className="h-5 w-5" />
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#161824]" />
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        >
+          <Bell size={18} />
+          <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-red-500" />
         </button>
 
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-sm font-medium text-white">{getUserName(user)}</div>
-            <div className="text-xs text-gray-500">{getRoleName(user)}</div>
-          </div>
+        <div className="hidden h-8 w-px bg-slate-200 sm:block" />
 
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#2d3145] bg-indigo-600/20 text-xs font-semibold text-white">
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-xl px-1.5 py-1 transition hover:bg-slate-50"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
             {getInitials(getUserName(user))}
           </div>
 
-          <ChevronDown className="h-4 w-4 text-gray-500" />
-        </div>
+          <div className="hidden text-left lg:block">
+            <p className="max-w-[150px] truncate text-sm font-semibold text-slate-800">
+              {getUserName(user)}
+            </p>
+
+            <p className="mt-0.5 max-w-[150px] truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {getRoleName(user)}
+            </p>
+          </div>
+
+          <ChevronDown
+            size={14}
+            className="hidden text-slate-400 lg:block"
+          />
+        </button>
       </div>
     </header>
   );
@@ -636,8 +515,8 @@ function Header({
 
 function ReportTabs() {
   return (
-    <div className="rounded-2xl border border-[#2d3145] bg-[#1e2130] p-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm shadow-slate-200/40">
+      <div className="flex min-w-max items-center gap-1">
         {reportTabs.map((tab) => {
           const Icon = tab.icon;
 
@@ -648,18 +527,200 @@ function ReportTabs() {
               end={tab.path === "/reports"}
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all",
+                  "inline-flex h-10 items-center gap-2 rounded-xl px-3.5",
+                  "text-sm font-semibold transition",
                   isActive
-                    ? "bg-[#5d5fef] text-white shadow-lg shadow-[#5d5fef]/20"
-                    : "text-gray-400 hover:bg-[#2a2e41] hover:text-white"
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 )
               }
             >
-              <Icon size={16} />
+              <Icon size={15} />
               {tab.label}
             </NavLink>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  trend,
+}: {
+  title: string;
+  value: string;
+  description: string;
+  icon: ElementType;
+  trend?: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{title}</p>
+
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            {value}
+          </p>
+
+          <div className="mt-2 flex items-center gap-2">
+            {trend !== undefined && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-0.5 text-[11px] font-bold",
+                  trend >= 0 ? "text-emerald-600" : "text-red-600"
+                )}
+              >
+                {trend >= 0 ? (
+                  <ArrowUpRight size={13} />
+                ) : (
+                  <ArrowDownRight size={13} />
+                )}
+
+                {trend >= 0 ? "+" : ""}
+                {trend}%
+              </span>
+            )}
+
+            <span className="text-[11px] text-slate-400">
+              {description}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon size={21} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowMetric({
+  title,
+  value,
+  total,
+  icon,
+}: {
+  title: string;
+  value: number;
+  total: number;
+  icon: ReactNode;
+}) {
+  const percentage =
+    total > 0 ? Math.round((value / total) * 100) : 0;
+
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-blue-600">{icon}</span>
+
+          <span className="truncate text-xs font-semibold text-slate-600">
+            {title}
+          </span>
+        </div>
+
+        <span className="text-xs font-bold text-slate-900">
+          {value}
+        </span>
+      </div>
+
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-blue-600"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+
+      <p className="mt-2 text-[10px] text-slate-400">
+        {percentage}% of documents
+      </p>
+    </div>
+  );
+}
+
+function ReportShortcutCard({
+  shortcut,
+}: {
+  shortcut: ReportShortcut;
+}) {
+  const Icon = shortcut.icon;
+
+  return (
+    <Link
+      to={shortcut.path}
+      className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3.5 transition hover:border-blue-200 hover:bg-blue-50/50"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-blue-600 group-hover:text-white">
+        <Icon size={18} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-slate-800">
+          {shortcut.title}
+        </p>
+
+        <p className="mt-0.5 truncate text-[11px] text-slate-400">
+          {shortcut.description}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="text-sm font-bold text-slate-900">
+          {shortcut.value}
+        </p>
+
+        <ChevronRight
+          size={14}
+          className="ml-auto mt-1 text-slate-300 transition group-hover:text-blue-600"
+        />
+      </div>
+    </Link>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    name?: string;
+    value?: number;
+    color?: string;
+  }>;
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+      <p className="mb-2 text-xs font-bold text-slate-700">{label}</p>
+
+      <div className="space-y-1.5">
+        {payload.map((item) => (
+          <div
+            key={item.name}
+            className="flex items-center justify-between gap-5 text-xs"
+          >
+            <span className="text-slate-500">
+              {item.name === "updates" ? "Updates" : "Uploads"}
+            </span>
+
+            <span className="font-bold text-slate-900">
+              {item.value ?? 0}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -743,8 +804,8 @@ export default function ReportsOverview() {
 
       setData({
         user,
-        documents,
-        projects,
+        documents: Array.isArray(documents) ? documents : [],
+        projects: Array.isArray(projects) ? projects : [],
         aiSummary,
         encryptionSummary,
         sandboxSummary,
@@ -756,7 +817,7 @@ export default function ReportsOverview() {
         message:
           error instanceof Error
             ? error.message
-            : "Failed to load report dashboard data.",
+            : "Unable to load report information.",
       });
     } finally {
       setLoading(false);
@@ -767,55 +828,61 @@ export default function ReportsOverview() {
     loadDashboard();
   }, []);
 
-  const documentsInRange = useMemo(() => {
-    return data.documents.filter((document) =>
-      isWithinRange(document.created_at || document.updated_at, selectedRangeDays)
-    );
-  }, [data.documents, selectedRangeDays]);
-
   const uploadedCurrent = countInWindow(
     data.documents,
     "created_at",
     selectedRangeDays
   );
+
   const uploadedPrevious = countPreviousWindow(
     data.documents,
     "created_at",
     selectedRangeDays
   );
-  const uploadTrend = getTrend(uploadedCurrent, uploadedPrevious);
 
   const updatedCurrent = countInWindow(
     data.documents,
     "updated_at",
     selectedRangeDays
   );
+
   const updatedPrevious = countPreviousWindow(
     data.documents,
     "updated_at",
     selectedRangeDays
   );
+
+  const uploadTrend = getTrend(uploadedCurrent, uploadedPrevious);
   const updateTrend = getTrend(updatedCurrent, updatedPrevious);
 
   const activeProjects = data.projects.filter(
     (project) => toLower(project.status) === "active"
   ).length;
 
-  const activeProjectFiles = data.documents.filter(
-    (document) =>
-      toLower(document.status) === "active" &&
-      (document.project_id || document.project?.id)
-  ).length;
-
   const totalStorageBytes = data.documents.reduce(
-    (sum, document) => sum + Number(document.file_size || 0),
+    (total, document) => total + Number(document.file_size || 0),
     0
   );
-  const capacityBytes = 5 * 1024 * 1024 * 1024 * 1024;
-  const storagePercent = Math.min(
-    100,
-    Math.round((totalStorageBytes / capacityBytes) * 100)
-  );
+
+  const cleanDocuments = data.documents.filter(isClean).length;
+
+  const sandboxSafeDocuments =
+    data.sandboxSummary?.safe_documents ??
+    data.documents.filter(isSandboxSafe).length;
+
+  const encryptedDocuments =
+    data.encryptionSummary?.encrypted_documents ??
+    data.documents.filter(isEncrypted).length;
+
+  const plaintextReadyDocuments =
+    data.plaintextSummary?.extracted_documents ??
+    data.documents.filter(isPlaintextReady).length;
+
+  const aiAnalyzedDocuments =
+    data.aiSummary?.analyzed_documents ??
+    data.documents.filter(isAiAnalyzed).length;
+
+  const blockedDocuments = data.documents.filter(isBlocked).length;
 
   const activityData = useMemo(
     () => buildActivityChartData(data.documents, selectedRangeDays),
@@ -827,50 +894,64 @@ export default function ReportsOverview() {
     [data.documents]
   );
 
-  const recentReports = useMemo(
-    () =>
-      buildRecentReports(
-        data.documents,
-        data.projects,
-        data.user,
-        selectedRangeDays
-      ),
-    [data.documents, data.projects, data.user, selectedRangeDays]
+  const reportShortcuts = useMemo<ReportShortcut[]>(
+    () => [
+      {
+        title: "Document Usage",
+        description: "Document totals and usage",
+        path: "/reports/docreport",
+        icon: FileText,
+        value: formatNumber(data.documents.length),
+      },
+      {
+        title: "Upload Activity",
+        description: `Uploads in ${selectedRangeDays} days`,
+        path: "/reports/uploadrep",
+        icon: UploadCloud,
+        value: formatNumber(uploadedCurrent),
+      },
+      {
+        title: "Project Report",
+        description: "Active project workspaces",
+        path: "/reports/depreport",
+        icon: FolderOpen,
+        value: formatNumber(activeProjects),
+      },
+      {
+        title: "Access & Security",
+        description: "Blocked or unsafe records",
+        path: "/reports/accessreport",
+        icon: ShieldAlert,
+        value: formatNumber(blockedDocuments),
+      },
+    ],
+    [
+      activeProjects,
+      blockedDocuments,
+      data.documents.length,
+      selectedRangeDays,
+      uploadedCurrent,
+    ]
   );
-
-  const securityReadyDocuments = data.documents.filter(
-    (document) => isClean(document) && isSandboxSafe(document) && isEncrypted(document)
-  ).length;
-
-  const blockedDocuments = data.documents.filter(isBlocked).length;
 
   function exportSummary(): void {
     const summary = {
       generated_at: new Date().toISOString(),
-      range_days: selectedRangeDays,
+      selected_range_days: selectedRangeDays,
       total_documents: data.documents.length,
-      documents_in_range: documentsInRange.length,
-      uploaded_in_range: uploadedCurrent,
-      updated_in_range: updatedCurrent,
+      uploads_in_range: uploadedCurrent,
+      updates_in_range: updatedCurrent,
       total_projects: data.projects.length,
       active_projects: activeProjects,
-      active_project_files: activeProjectFiles,
-      storage_used: formatBytes(totalStorageBytes),
-      storage_percent: storagePercent,
-      clean_documents: data.documents.filter(isClean).length,
-      sandbox_safe_documents:
-        data.sandboxSummary?.safe_documents ??
-        data.documents.filter(isSandboxSafe).length,
-      encrypted_documents:
-        data.encryptionSummary?.encrypted_documents ??
-        data.documents.filter(isEncrypted).length,
-      plaintext_ready_documents:
-        data.plaintextSummary?.extracted_documents ??
-        data.documents.filter(isPlaintextReady).length,
-      ai_analyzed_documents:
-        data.aiSummary?.analyzed_documents ??
-        data.documents.filter(isAiAnalyzed).length,
+      storage_used_bytes: totalStorageBytes,
+      storage_used_readable: formatBytes(totalStorageBytes),
+      clean_documents: cleanDocuments,
+      sandbox_safe_documents: sandboxSafeDocuments,
+      encrypted_documents: encryptedDocuments,
+      plaintext_ready_documents: plaintextReadyDocuments,
+      ai_analyzed_documents: aiAnalyzedDocuments,
       blocked_documents: blockedDocuments,
+      document_types: documentTypeRows,
     };
 
     const blob = new Blob([JSON.stringify(summary, null, 2)], {
@@ -881,9 +962,7 @@ export default function ReportsOverview() {
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `dms-report-summary-${new Date()
-      .toISOString()
-      .slice(0, 10)}.json`;
+    link.download = `dms-report-summary-${getLocalDateKey(new Date())}.json`;
 
     document.body.appendChild(link);
     link.click();
@@ -893,558 +972,401 @@ export default function ReportsOverview() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#0f111a] font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
       <AdminSidebar />
 
-      <div className="flex h-full flex-1 flex-col overflow-hidden">
-        <Header user={data.user} loading={loading} onRefresh={loadDashboard} />
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header
+          user={data.user}
+          loading={loading}
+          onRefresh={loadDashboard}
+        />
 
-        <main className="custom-scrollbar flex-1 overflow-y-auto bg-[#0f111a] p-8">
-          <div className="mx-auto max-w-7xl space-y-6">
+        <div className="custom-scrollbar flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
             <ReportTabs />
 
             {alert && (
-              <div
-                className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
-                  alert.type === "error"
-                    ? "border-red-500/20 bg-red-500/10 text-red-300"
-                    : "border-blue-500/20 bg-blue-500/10 text-blue-300"
-                }`}
-              >
-                <AlertTriangle className="h-4 w-4" />
-                {alert.message}
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    size={18}
+                    className="mt-0.5 shrink-0"
+                  />
+
+                  <span>{alert.message}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAlert(null)}
+                  className="text-lg leading-none text-red-500"
+                  aria-label="Close alert"
+                >
+                  ×
+                </button>
               </div>
             )}
 
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h1 className="mb-2 text-2xl font-bold text-white">
-                  Reports Dashboard
-                </h1>
-                <p className="text-sm text-gray-400">
-                  Real database insights from documents, projects, scan,
-                  sandbox, encryption, plaintext, and AI controllers.
+                <h2 className="text-lg font-bold text-slate-900">
+                  Reporting Overview
+                </h2>
+
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Real-time insights from your documents, projects and security
+                  workflow.
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={rangeDays}
-                  onChange={(event) => setRangeDays(event.target.value as DateRange)}
-                  className="rounded-lg border border-[#2d3145] bg-[#1e2130] px-4 py-2 text-sm font-medium text-gray-300 outline-none transition-colors hover:bg-[#2a2e41]"
+                  onChange={(event) =>
+                    setRangeDays(event.target.value as DateRange)
+                  }
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
                 >
-                  <option value="7">Last 7 Days</option>
-                  <option value="30">Last 30 Days</option>
-                  <option value="90">Last 90 Days</option>
-                  <option value="365">Last 12 Months</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last 12 months</option>
                 </select>
 
                 <button
                   type="button"
                   onClick={exportSummary}
-                  className="flex items-center gap-2 rounded-lg bg-[#5d5fef] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#4b4dc4]"
+                  disabled={loading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Download className="h-4 w-4" />
-                  Export Summary
+                  <Download size={16} />
+                  Export data
                 </button>
               </div>
-            </div>
+            </section>
 
             {loading ? (
-              <div className="flex items-center justify-center gap-3 rounded-2xl border border-[#2d3145] bg-[#1e2130] p-12 text-gray-400">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Loading report data from database...
+              <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm shadow-slate-200/40">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <Loader2 size={23} className="animate-spin" />
+                </div>
+
+                <p className="mt-4 text-sm font-semibold text-slate-700">
+                  Loading report data
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Retrieving current database information...
+                </p>
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <KPICard
-                    title="DOCUMENTS UPDATED"
-                    value={formatNumber(updatedCurrent)}
-                    trend={updateTrend}
-                    trendValue={`${updateTrend >= 0 ? "+" : ""}${updateTrend}%`}
-                    subtitle={`vs previous ${selectedRangeDays} days`}
-                    icon={Eye}
-                    iconColor="text-blue-500"
-                    iconBg="bg-blue-500/10"
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    title="Total Documents"
+                    value={formatNumber(data.documents.length)}
+                    description="registered records"
+                    icon={FileText}
                   />
 
-                  <KPICard
-                    title="UPLOAD VOLUME"
+                  <MetricCard
+                    title="Uploads"
                     value={formatNumber(uploadedCurrent)}
-                    trend={uploadTrend}
-                    trendValue={`${uploadTrend >= 0 ? "+" : ""}${uploadTrend}%`}
-                    subtitle={`vs previous ${selectedRangeDays} days`}
+                    description={`vs previous ${selectedRangeDays} days`}
                     icon={UploadCloud}
-                    iconColor="text-purple-500"
-                    iconBg="bg-purple-500/10"
+                    trend={uploadTrend}
                   />
 
-                  <KPICard
-                    title="ACTIVE PROJECT FILES"
-                    value={formatNumber(activeProjectFiles)}
-                    trend={activeProjects > 0 ? 1 : 0}
-                    trendValue={`${formatNumber(activeProjects)} active`}
-                    subtitle="projects"
-                    icon={FolderOpen}
-                    iconColor="text-orange-500"
-                    iconBg="bg-orange-500/10"
+                  <MetricCard
+                    title="Document Updates"
+                    value={formatNumber(updatedCurrent)}
+                    description={`vs previous ${selectedRangeDays} days`}
+                    icon={RefreshCcw}
+                    trend={updateTrend}
                   />
 
-                  <div className="flex flex-col justify-between rounded-2xl border border-[#2d3145] bg-[#1e2130] p-5">
-                    <div className="mb-4 flex items-start justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                        STORAGE UTILIZATION
-                      </h3>
-
-                      <div className="flex h-8 w-8 items-center justify-center rounded bg-emerald-500/10">
-                        <Database className="h-4 w-4 text-emerald-500" />
-                      </div>
-                    </div>
-
-                    <div className="mb-3">
-                      <span className="text-2xl font-bold text-white">
-                        {formatBytes(totalStorageBytes)}
-                      </span>
-                    </div>
-
-                    <div className="mt-auto">
-                      <div className="mb-2 flex h-1.5 w-full overflow-hidden rounded-full bg-[#2d3145]">
-                        <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{ width: `${storagePercent}%` }}
-                        />
-                      </div>
-
-                      <p className="text-xs text-gray-500">
-                        {storagePercent}% of 5 TB capacity used
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
-                  <SmallMetric
-                    title="Clean Scan"
-                    value={data.documents.filter(isClean).length}
-                    icon={ShieldCheck}
-                    tone="emerald"
+                  <MetricCard
+                    title="Storage Used"
+                    value={formatBytes(totalStorageBytes)}
+                    description="real uploaded file size"
+                    icon={Database}
                   />
+                </section>
 
-                  <SmallMetric
-                    title="Sandbox Safe"
-                    value={
-                      data.sandboxSummary?.safe_documents ??
-                      data.documents.filter(isSandboxSafe).length
-                    }
-                    icon={Radar}
-                    tone="orange"
-                  />
-
-                  <SmallMetric
-                    title="Encrypted"
-                    value={
-                      data.encryptionSummary?.encrypted_documents ??
-                      data.documents.filter(isEncrypted).length
-                    }
-                    icon={LockKeyhole}
-                    tone="emerald"
-                  />
-
-                  <SmallMetric
-                    title="Text Ready"
-                    value={
-                      data.plaintextSummary?.extracted_documents ??
-                      data.documents.filter(isPlaintextReady).length
-                    }
-                    icon={ScanSearch}
-                    tone="blue"
-                  />
-
-                  <SmallMetric
-                    title="AI Analyzed"
-                    value={
-                      data.aiSummary?.analyzed_documents ??
-                      data.documents.filter(isAiAnalyzed).length
-                    }
-                    icon={BrainCircuit}
-                    tone="purple"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                  <div className="rounded-2xl border border-[#2d3145] bg-[#1e2130] p-5 lg:col-span-2">
-                    <div className="mb-6 flex items-center justify-between">
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h3 className="mb-1 font-semibold text-white">
-                          Document Activity Trends
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Document Activity
                         </h3>
-                        <p className="text-xs text-gray-400">
-                          Real uploads and updates in the selected range
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Upload and update activity for the selected period
                         </p>
                       </div>
 
-                      <div className="flex gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-blue-500" />
-                          <span className="text-xs text-gray-400">Updates</span>
-                        </div>
+                      <div className="flex items-center gap-4 text-[11px] font-medium text-slate-500">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-blue-600" />
+                          Updates
+                        </span>
 
-                        <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-purple-500" />
-                          <span className="text-xs text-gray-400">Uploads</span>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-violet-500" />
+                          Uploads
+                        </span>
                       </div>
                     </div>
 
-                    <div className="h-64">
+                    <div className="mt-5 h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart
                           data={activityData}
-                          margin={{ top: 10, right: 0, left: -20, bottom: 0 }}
+                          margin={{
+                            top: 10,
+                            right: 8,
+                            left: -22,
+                            bottom: 0,
+                          }}
                         >
                           <defs>
                             <linearGradient
-                              id="colorUpdated"
+                              id="reportsUpdatesGradient"
                               x1="0"
                               y1="0"
                               x2="0"
                               y2="1"
                             >
                               <stop
-                                offset="5%"
-                                stopColor="#3b82f6"
-                                stopOpacity={0.1}
+                                offset="0%"
+                                stopColor="#2563eb"
+                                stopOpacity={0.18}
                               />
+
                               <stop
-                                offset="95%"
-                                stopColor="#3b82f6"
+                                offset="100%"
+                                stopColor="#2563eb"
                                 stopOpacity={0}
                               />
                             </linearGradient>
 
                             <linearGradient
-                              id="colorUploads"
+                              id="reportsUploadsGradient"
                               x1="0"
                               y1="0"
                               x2="0"
                               y2="1"
                             >
                               <stop
-                                offset="5%"
-                                stopColor="#a855f7"
-                                stopOpacity={0.1}
+                                offset="0%"
+                                stopColor="#8b5cf6"
+                                stopOpacity={0.16}
                               />
+
                               <stop
-                                offset="95%"
-                                stopColor="#a855f7"
+                                offset="100%"
+                                stopColor="#8b5cf6"
                                 stopOpacity={0}
                               />
                             </linearGradient>
                           </defs>
 
                           <CartesianGrid
-                            strokeDasharray="3 3"
                             vertical={false}
-                            stroke="#2d3145"
+                            stroke="#e2e8f0"
+                            strokeDasharray="4 4"
                           />
 
                           <XAxis
                             dataKey="name"
                             axisLine={false}
                             tickLine={false}
-                            tick={{ fill: "#6b7280", fontSize: 11 }}
-                            dy={10}
+                            tick={{
+                              fill: "#94a3b8",
+                              fontSize: 10,
+                            }}
+                            dy={8}
                           />
 
                           <YAxis
                             axisLine={false}
                             tickLine={false}
-                            tick={{ fill: "#6b7280", fontSize: 11 }}
-                            dx={-10}
+                            allowDecimals={false}
+                            tick={{
+                              fill: "#94a3b8",
+                              fontSize: 10,
+                            }}
                           />
 
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "#1e2130",
-                              borderColor: "#2d3145",
-                              borderRadius: "8px",
-                              color: "#fff",
-                            }}
-                            itemStyle={{ color: "#fff" }}
-                          />
+                          <Tooltip content={<ChartTooltip />} />
 
                           <Area
                             type="monotone"
-                            dataKey="updated"
-                            stroke="#3b82f6"
-                            strokeWidth={3}
-                            fillOpacity={1}
-                            fill="url(#colorUpdated)"
+                            dataKey="updates"
+                            stroke="#2563eb"
+                            strokeWidth={2.5}
+                            fill="url(#reportsUpdatesGradient)"
+                            activeDot={{ r: 4 }}
                           />
 
                           <Area
                             type="monotone"
                             dataKey="uploads"
-                            stroke="#a855f7"
-                            strokeWidth={3}
-                            fillOpacity={1}
-                            fill="url(#colorUploads)"
+                            stroke="#8b5cf6"
+                            strokeWidth={2.5}
+                            fill="url(#reportsUploadsGradient)"
+                            activeDot={{ r: 4 }}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
 
-                  <div className="flex flex-col rounded-2xl border border-[#2d3145] bg-[#1e2130] p-5">
-                    <div className="mb-6">
-                      <h3 className="mb-1 font-semibold text-white">
-                        Top Documents by Type
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Document Types
                       </h3>
-                      <p className="text-xs text-gray-400">
-                        Distribution from database document types/extensions
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Most common file classifications
                       </p>
                     </div>
 
-                    <div className="flex flex-1 flex-col justify-center space-y-6">
+                    <div className="mt-6 space-y-5">
                       {documentTypeRows.length > 0 ? (
-                        documentTypeRows.map((item) => (
-                          <div key={item.name}>
-                            <div className="mb-2 flex items-center justify-between">
-                              <span className="text-sm font-medium text-gray-300">
-                                {item.name}
+                        documentTypeRows.map((row) => (
+                          <div key={row.name}>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <span className="truncate text-xs font-semibold text-slate-600">
+                                {row.name}
                               </span>
-                              <span className="text-xs text-gray-400">
-                                {item.percent}% ({item.count})
+
+                              <span className="shrink-0 text-[11px] font-bold text-slate-900">
+                                {row.count}
                               </span>
                             </div>
 
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
+                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                               <div
-                                className={`h-full rounded-full ${item.color}`}
-                                style={{ width: `${item.percent}%` }}
+                                className="h-full rounded-full bg-blue-600"
+                                style={{
+                                  width: `${row.percentage}%`,
+                                }}
                               />
                             </div>
+
+                            <p className="mt-1 text-right text-[10px] text-slate-400">
+                              {row.percentage}%
+                            </p>
                           </div>
                         ))
                       ) : (
-                        <p className="text-sm text-gray-500">
-                          No document type data available yet.
-                        </p>
+                        <div className="flex min-h-[230px] flex-col items-center justify-center text-center">
+                          <FileText
+                            size={26}
+                            className="text-slate-300"
+                          />
+
+                          <p className="mt-3 text-sm font-semibold text-slate-600">
+                            No document type data
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            Uploaded files will appear here.
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
+                </section>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <SecuritySummaryCard
-                    title="Security Ready"
-                    value={securityReadyDocuments}
-                    helper="Clean + sandbox safe + encrypted"
-                    tone="success"
-                  />
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Document Workflow Health
+                      </h3>
 
-                  <SecuritySummaryCard
-                    title="Blocked / Unsafe"
-                    value={blockedDocuments}
-                    helper="Infected, rejected, unsafe, failed, or blocked"
-                    tone="danger"
-                  />
+                      <p className="mt-1 text-xs text-slate-400">
+                        One compact view of document processing readiness
+                      </p>
+                    </div>
 
-                  <SecuritySummaryCard
-                    title="Ready for AI"
-                    value={
-                      data.aiSummary?.ready_for_ai ??
-                      data.documents.filter(
-                        (document) =>
-                          isClean(document) &&
-                          isSandboxSafe(document) &&
-                          isPlaintextReady(document) &&
-                          !isAiAnalyzed(document)
-                      ).length
-                    }
-                    helper="Clean + safe + plaintext extracted"
-                    tone="purple"
-                  />
-                </div>
+                    {blockedDocuments > 0 && (
+                      <span className="inline-flex self-start items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold text-red-700">
+                        <ShieldAlert size={13} />
+                        {blockedDocuments} needs review
+                      </span>
+                    )}
+                  </div>
 
-                <div className="overflow-hidden rounded-2xl border border-[#2d3145] bg-[#1e2130]">
-                  <div className="flex items-center justify-between border-b border-[#2d3145] px-5 py-4">
-                    <h3 className="font-semibold text-white">
-                      Generated Report Summary
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <WorkflowMetric
+                      title="Clean Scan"
+                      value={cleanDocuments}
+                      total={data.documents.length}
+                      icon={<ShieldCheck size={15} />}
+                    />
+
+                    <WorkflowMetric
+                      title="Sandbox Safe"
+                      value={sandboxSafeDocuments}
+                      total={data.documents.length}
+                      icon={<Radar size={15} />}
+                    />
+
+                    <WorkflowMetric
+                      title="Encrypted"
+                      value={encryptedDocuments}
+                      total={data.documents.length}
+                      icon={<LockKeyhole size={15} />}
+                    />
+
+                    <WorkflowMetric
+                      title="Text Ready"
+                      value={plaintextReadyDocuments}
+                      total={data.documents.length}
+                      icon={<ScanSearch size={15} />}
+                    />
+
+                    <WorkflowMetric
+                      title="AI Analyzed"
+                      value={aiAnalyzedDocuments}
+                      total={data.documents.length}
+                      icon={<BrainCircuit size={15} />}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                  <div className="mb-4">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Open Detailed Reports
                     </h3>
 
-                    <button
-                      type="button"
-                      onClick={exportSummary}
-                      className="text-sm font-medium text-blue-500 transition-colors hover:text-blue-400"
-                    >
-                      Export JSON
-                    </button>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Continue to a focused report without repeating dashboard
+                      information.
+                    </p>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full whitespace-nowrap text-left text-sm">
-                      <thead className="border-b border-[#2d3145] bg-[#181a25] text-xs uppercase text-gray-400">
-                        <tr>
-                          <th className="px-5 py-3 font-semibold tracking-wider">
-                            Report Name
-                          </th>
-                          <th className="px-5 py-3 font-semibold tracking-wider">
-                            Type
-                          </th>
-                          <th className="px-5 py-3 font-semibold tracking-wider">
-                            Date Generated
-                          </th>
-                          <th className="px-5 py-3 font-semibold tracking-wider">
-                            Generated By
-                          </th>
-                          <th className="px-5 py-3 text-right font-semibold tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody className="divide-y divide-[#2d3145]">
-                        {recentReports.map((report) => (
-                          <tr
-                            key={report.name}
-                            className="group transition-colors hover:bg-[#24283b]"
-                          >
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded ${report.fileIconColor}`}
-                                >
-                                  {report.name.includes("Activity") ? (
-                                    <UploadCloud className="h-4 w-4" />
-                                  ) : (
-                                    <FilePlus className="h-4 w-4" />
-                                  )}
-                                </div>
-
-                                <div>
-                                  <div className="font-medium text-white">
-                                    {report.name}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {report.fileType}
-                                  </div>
-                                  <div className="text-xs text-gray-600">
-                                    {report.description}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-
-                            <td className="px-5 py-4">
-                              <span
-                                className={`rounded-md px-2.5 py-1 text-xs font-medium ${report.typeColor}`}
-                              >
-                                {report.type}
-                              </span>
-                            </td>
-
-                            <td className="px-5 py-4 text-sm text-gray-400">
-                              {report.date}
-                            </td>
-
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white ${report.userColor}`}
-                                >
-                                  {report.userInitials}
-                                </div>
-
-                                <span className="text-gray-300">{report.user}</span>
-                              </div>
-                            </td>
-
-                            <td className="px-5 py-4 text-right">
-                              <button
-                                type="button"
-                                onClick={exportSummary}
-                                className="inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
-                              >
-                                <Download className="h-4 w-4" />
-                                Download
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {reportShortcuts.map((shortcut) => (
+                      <ReportShortcutCard
+                        key={shortcut.path}
+                        shortcut={shortcut}
+                      />
+                    ))}
                   </div>
-                </div>
+                </section>
               </>
             )}
           </div>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function SmallMetric({
-  title,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  title: string;
-  value: number;
-  icon: ElementType;
-  tone: "emerald" | "orange" | "blue" | "purple";
-}) {
-  const toneClass = {
-    emerald: "text-emerald-400 bg-emerald-400/10",
-    orange: "text-orange-400 bg-orange-400/10",
-    blue: "text-blue-400 bg-blue-400/10",
-    purple: "text-purple-400 bg-purple-400/10",
-  }[tone];
-
-  return (
-    <div className="rounded-2xl border border-[#2d3145] bg-[#1e2130] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          {title}
-        </span>
-
-        <div className={`flex h-8 w-8 items-center justify-center rounded ${toneClass}`}>
-          <Icon className="h-4 w-4" />
         </div>
-      </div>
-
-      <p className="text-2xl font-bold text-white">{formatNumber(value)}</p>
-    </div>
-  );
-}
-
-function SecuritySummaryCard({
-  title,
-  value,
-  helper,
-  tone,
-}: {
-  title: string;
-  value: number;
-  helper: string;
-  tone: "success" | "danger" | "purple";
-}) {
-  const toneClass = {
-    success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    danger: "border-red-500/20 bg-red-500/10 text-red-300",
-    purple: "border-purple-500/20 bg-purple-500/10 text-purple-300",
-  }[tone];
-
-  return (
-    <div className={`rounded-2xl border p-5 ${toneClass}`}>
-      <p className="text-xs font-semibold uppercase tracking-wider opacity-80">
-        {title}
-      </p>
-      <p className="mt-2 text-3xl font-bold">{formatNumber(value)}</p>
-      <p className="mt-2 text-sm opacity-80">{helper}</p>
+      </main>
     </div>
   );
 }

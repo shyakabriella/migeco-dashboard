@@ -4,30 +4,34 @@ import type {
   DragEvent,
   FormEvent,
   KeyboardEvent,
+  ReactNode,
 } from "react";
 import {
   AlertCircle,
-  Bell,
   Bug,
   CheckCircle2,
   ChevronDown,
-  Command,
   FileText,
+  FolderOpen,
   Info,
   Loader2,
   LockKeyhole,
+  RefreshCcw,
   ScanSearch,
-  Search,
   ShieldCheck,
+  Tags,
   UploadCloud,
   X,
 } from "lucide-react";
+
 import AdminSidebar from "../AdminSidebar";
+
 import {
   getDocumentCategories,
   getProjects,
   uploadDocument,
 } from "../../../services/dmsApi";
+
 import type {
   DocumentCategory,
   DocumentType,
@@ -44,7 +48,6 @@ type UploadProps = {
   modalMode?: boolean;
   onClose?: () => void;
   onUploaded?: () => void;
-
   defaultProjectId?: number | string | null;
   lockProjectSelection?: boolean;
   projectLabel?: string;
@@ -64,10 +67,12 @@ type UploadFormState = {
 
 type ProgressStatus = "idle" | "running" | "success" | "failed";
 
-const documentTypeOptions: {
+type SelectOption<T extends string> = {
   label: string;
-  value: DocumentType;
-}[] = [
+  value: T;
+};
+
+const documentTypeOptions: SelectOption<DocumentType>[] = [
   { label: "Geological Report", value: "geological_report" },
   { label: "Technical Drawing", value: "technical_drawing" },
   { label: "Construction Record", value: "construction_record" },
@@ -80,30 +85,30 @@ const documentTypeOptions: {
   { label: "Other", value: "other" },
 ];
 
-const securityLevelOptions: {
+const securityLevelOptions: Array<{
   label: string;
   value: DocumentSecurityLevel;
   helper: string;
-}[] = [
+}> = [
   {
     label: "Public",
     value: "public",
-    helper: "Can be accessed by allowed general users.",
+    helper: "Available to general users who have project access.",
   },
   {
     label: "Internal",
     value: "internal",
-    helper: "Default company internal document.",
+    helper: "Recommended for normal company documents.",
   },
   {
     label: "Confidential",
     value: "confidential",
-    helper: "Sensitive document for approved roles only.",
+    helper: "Limited to approved roles and project members.",
   },
   {
     label: "Restricted",
     value: "restricted",
-    helper: "Highly sensitive document with strict access.",
+    helper: "Highest protection with strict access controls.",
   },
 ];
 
@@ -138,6 +143,10 @@ const initialFormState: UploadFormState = {
   runOcr: false,
 };
 
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "0 B";
 
@@ -146,11 +155,11 @@ function formatBytes(bytes: number): string {
   let unitIndex = 0;
 
   while (size >= 1024 && unitIndex < units.length - 1) {
-    size = size / 1024;
+    size /= 1024;
     unitIndex += 1;
   }
 
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function getFileExtension(fileName: string): string {
@@ -161,9 +170,7 @@ function getFileExtension(fileName: string): string {
 }
 
 function isAllowedFile(file: File): boolean {
-  const extension = getFileExtension(file.name);
-
-  return allowedFileExtensions.includes(extension);
+  return allowedFileExtensions.includes(getFileExtension(file.name));
 }
 
 function getApiErrorDataMessage(data: unknown): string | null {
@@ -204,7 +211,7 @@ function getErrorMessage(error: unknown): string {
   const dataMessage = getApiErrorDataMessage(apiError.data);
 
   if (apiError.status === 401) {
-    return dataMessage || "Your session expired. Please login again.";
+    return dataMessage || "Your session expired. Please sign in again.";
   }
 
   if (apiError.status === 403) {
@@ -212,40 +219,257 @@ function getErrorMessage(error: unknown): string {
   }
 
   if (apiError.status === 422) {
-    return dataMessage || apiError.message || "Some required information is missing or invalid.";
+    return (
+      dataMessage ||
+      apiError.message ||
+      "Some required information is missing or invalid."
+    );
   }
 
   if (apiError.status === 500) {
-    return dataMessage || apiError.message || "Server error during upload. Please check Laravel logs.";
+    return (
+      dataMessage ||
+      apiError.message ||
+      "The server could not process the upload."
+    );
   }
 
   return dataMessage || apiError.message || "Upload failed. Please try again.";
 }
 
 function getSecurityHelper(level: DocumentSecurityLevel): string {
-  const item = securityLevelOptions.find((option) => option.value === level);
-
-  return item?.helper || "Document access will follow system permission rules.";
+  return (
+    securityLevelOptions.find((option) => option.value === level)?.helper ||
+    "Document access follows system permission rules."
+  );
 }
 
-function getProgressColor(progress: number, status: ProgressStatus): string {
+function getProgressColor(
+  progress: number,
+  status: ProgressStatus
+): string {
   if (status === "failed") return "bg-red-500";
   if (status === "success") return "bg-emerald-500";
-
-  if (progress < 40) return "bg-red-500";
-  if (progress < 85) return "bg-yellow-500";
+  if (progress < 40) return "bg-blue-500";
+  if (progress < 85) return "bg-amber-500";
 
   return "bg-emerald-500";
 }
 
-function getProgressTextColor(progress: number, status: ProgressStatus): string {
-  if (status === "failed") return "text-red-300";
-  if (status === "success") return "text-emerald-300";
+function getProgressTextClass(status: ProgressStatus): string {
+  if (status === "failed") return "text-red-700";
+  if (status === "success") return "text-emerald-700";
 
-  if (progress < 40) return "text-red-300";
-  if (progress < 85) return "text-yellow-300";
+  return "text-blue-700";
+}
 
-  return "text-emerald-300";
+function normalizeProjectsResponse(response: unknown): ProjectSummary[] {
+  if (Array.isArray(response)) {
+    return response as ProjectSummary[];
+  }
+
+  if (response && typeof response === "object") {
+    const record = response as Record<string, unknown>;
+
+    if (Array.isArray(record.data)) {
+      return record.data as ProjectSummary[];
+    }
+
+    if (
+      record.data &&
+      typeof record.data === "object" &&
+      Array.isArray((record.data as Record<string, unknown>).data)
+    ) {
+      return (record.data as Record<string, unknown>)
+        .data as ProjectSummary[];
+    }
+
+    if (Array.isArray(record.projects)) {
+      return record.projects as ProjectSummary[];
+    }
+  }
+
+  return [];
+}
+
+function normalizeCategoriesResponse(response: unknown): DocumentCategory[] {
+  if (Array.isArray(response)) {
+    return response as DocumentCategory[];
+  }
+
+  if (response && typeof response === "object") {
+    const record = response as Record<string, unknown>;
+
+    if (Array.isArray(record.data)) {
+      return record.data as DocumentCategory[];
+    }
+
+    if (
+      record.data &&
+      typeof record.data === "object" &&
+      Array.isArray((record.data as Record<string, unknown>).data)
+    ) {
+      return (record.data as Record<string, unknown>)
+        .data as DocumentCategory[];
+    }
+
+    if (Array.isArray(record.categories)) {
+      return record.categories as DocumentCategory[];
+    }
+  }
+
+  return [];
+}
+
+function FieldLabel({
+  children,
+  required = false,
+}: {
+  children: ReactNode;
+  required?: boolean;
+}) {
+  return (
+    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+      {children}
+      {required && <span className="ml-1 text-red-500">*</span>}
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  disabled,
+  required = false,
+  children,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  required?: boolean;
+  children: ReactNode;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <FieldLabel required={required}>{label}</FieldLabel>
+
+      <div className="relative">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
+        >
+          {children}
+        </select>
+
+        <ChevronDown
+          size={14}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function AlertBox({
+  type,
+  message,
+}: {
+  type: "success" | "error";
+  message: string;
+}) {
+  const Icon = type === "success" ? CheckCircle2 : AlertCircle;
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+        type === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-red-200 bg-red-50 text-red-700"
+      )}
+    >
+      <Icon size={17} className="mt-0.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function PipelineStep({
+  number,
+  title,
+  text,
+  icon,
+}: {
+  number: number;
+  title: string;
+  text: string;
+  icon: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-slate-700">
+          {number}. {title}
+        </p>
+
+        <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-400">
+          {text}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SecurityOption({
+  title,
+  description,
+  checked,
+  locked = false,
+  disabled,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  locked?: boolean;
+  disabled?: boolean;
+  onChange?: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-center justify-between gap-4 rounded-xl border px-4 py-3",
+        checked
+          ? "border-blue-200 bg-blue-50/70"
+          : "border-slate-200 bg-white",
+        locked ? "cursor-default" : "cursor-pointer"
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-700">{title}</p>
+
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-400">
+          {description}
+        </p>
+      </div>
+
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={locked || disabled}
+        onChange={(event) => onChange?.(event.target.checked)}
+        className="h-4 w-4 shrink-0 rounded border-slate-300 accent-blue-600"
+      />
+    </label>
+  );
 }
 
 export default function Upload({
@@ -261,8 +485,10 @@ export default function Upload({
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
 
-  const [formData, setFormData] =
-    useState<UploadFormState>(initialFormState);
+  const [formData, setFormData] = useState<UploadFormState>({
+    ...initialFormState,
+    projectId: defaultProjectId ? String(defaultProjectId) : "",
+  });
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -278,20 +504,30 @@ export default function Upload({
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
 
-  const allowedFileText = useMemo(() => {
-    return allowedFileExtensions.join(", ");
-  }, []);
+  const allowedFileText = useMemo(
+    () => allowedFileExtensions.join(", "),
+    []
+  );
 
-  function resetForm(clearMessages = true): void {
+  const selectedSecurity = useMemo(
+    () =>
+      securityLevelOptions.find(
+        (option) => option.value === formData.securityLevel
+      ),
+    [formData.securityLevel]
+  );
+
+  function resetForm(clearProgress = true): void {
     setFormData({
       ...initialFormState,
       projectId: defaultProjectId ? String(defaultProjectId) : "",
     });
-    setSelectedFile(null);
 
-    if (clearMessages) {
-      setErrorMessage("");
-      setSuccessMessage("");
+    setSelectedFile(null);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    if (clearProgress) {
       setScanProgress(0);
       setScanStage("Waiting for upload");
       setProgressStatus("idle");
@@ -306,8 +542,8 @@ export default function Upload({
     field: K,
     value: UploadFormState[K]
   ): void {
-    setFormData((previous) => ({
-      ...previous,
+    setFormData((currentForm) => ({
+      ...currentForm,
       [field]: value,
     }));
 
@@ -320,20 +556,17 @@ export default function Upload({
       setLoadingLookups(true);
       setErrorMessage("");
 
-      const [categoryData, projectData] = await Promise.all([
+      const [categoryResponse, projectResponse] = await Promise.all([
         getDocumentCategories({
           status: "active",
         }),
         getProjects(),
       ]);
 
-      setCategories(categoryData);
-      setProjects(projectData);
+      setCategories(normalizeCategoriesResponse(categoryResponse));
+      setProjects(normalizeProjectsResponse(projectResponse));
     } catch (error) {
-      setErrorMessage(
-        getErrorMessage(error) ||
-          "Failed to load projects and categories. Please refresh."
-      );
+      setErrorMessage(getErrorMessage(error));
     } finally {
       setLoadingLookups(false);
     }
@@ -344,12 +577,10 @@ export default function Upload({
   }, []);
 
   useEffect(() => {
-    if (defaultProjectId) {
-      setFormData((previous) => ({
-        ...previous,
-        projectId: String(defaultProjectId),
-      }));
-    }
+    setFormData((currentForm) => ({
+      ...currentForm,
+      projectId: defaultProjectId ? String(defaultProjectId) : "",
+    }));
   }, [defaultProjectId]);
 
   function handleFileSelect(file: File | null): void {
@@ -363,11 +594,11 @@ export default function Upload({
       return;
     }
 
-    const maxSizeInBytes = 100 * 1024 * 1024;
+    const maximumSize = 100 * 1024 * 1024;
 
-    if (file.size > maxSizeInBytes) {
+    if (file.size > maximumSize) {
       setSelectedFile(null);
-      setErrorMessage("File is too large. Maximum allowed size is 100MB.");
+      setErrorMessage("The file is too large. Maximum size is 100 MB.");
       return;
     }
 
@@ -379,11 +610,11 @@ export default function Upload({
     setProgressStatus("idle");
 
     if (!formData.title.trim()) {
-      const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
+      const title = file.name.replace(/\.[^/.]+$/, "");
 
-      setFormData((previous) => ({
-        ...previous,
-        title: nameWithoutExtension,
+      setFormData((currentForm) => ({
+        ...currentForm,
+        title,
       }));
     }
   }
@@ -391,18 +622,13 @@ export default function Upload({
   function handleFileInputChange(
     event: ChangeEvent<HTMLInputElement>
   ): void {
-    const file = event.target.files?.[0] || null;
-
-    handleFileSelect(file);
+    handleFileSelect(event.target.files?.[0] || null);
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault();
     setIsDragging(false);
-
-    const file = event.dataTransfer.files?.[0] || null;
-
-    handleFileSelect(file);
+    handleFileSelect(event.dataTransfer.files?.[0] || null);
   }
 
   function handleDragOver(event: DragEvent<HTMLDivElement>): void {
@@ -424,17 +650,15 @@ export default function Upload({
       return;
     }
 
-    setFormData((previous) => ({
-      ...previous,
-      tags: [...previous.tags, tag],
+    setFormData((currentForm) => ({
+      ...currentForm,
+      tags: [...currentForm.tags, tag],
       tagInput: "",
     }));
-
-    if (errorMessage) setErrorMessage("");
   }
 
   function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
       handleAddTag();
     }
@@ -444,48 +668,51 @@ export default function Upload({
       !formData.tagInput &&
       formData.tags.length > 0
     ) {
-      setFormData((previous) => ({
-        ...previous,
-        tags: previous.tags.slice(0, -1),
+      setFormData((currentForm) => ({
+        ...currentForm,
+        tags: currentForm.tags.slice(0, -1),
       }));
     }
   }
 
   function removeTag(tagToRemove: string): void {
-    setFormData((previous) => ({
-      ...previous,
-      tags: previous.tags.filter((tag) => tag !== tagToRemove),
+    setFormData((currentForm) => ({
+      ...currentForm,
+      tags: currentForm.tags.filter((tag) => tag !== tagToRemove),
     }));
   }
 
-  function validateForm(): boolean {
+  function validateForm(): string | null {
     if (!selectedFile) {
-      setErrorMessage("Please select a document file first.");
-      return false;
+      return "Please select a document file.";
     }
 
     if (!formData.title.trim()) {
-      setErrorMessage("Please enter the document title.");
-      return false;
+      return "Please enter the document title.";
     }
 
     if (!formData.categoryId) {
-      setErrorMessage("Please select a document category.");
-      return false;
+      return "Please select a document category.";
     }
 
     if (!formData.documentType) {
-      setErrorMessage("Please select the document type.");
-      return false;
+      return "Please select the document type.";
     }
 
-    return true;
+    return null;
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> {
     event.preventDefault();
 
-    if (!validateForm() || !selectedFile) return;
+    const validationError = validateForm();
+
+    if (validationError || !selectedFile) {
+      setErrorMessage(validationError || "Please select a document file.");
+      return;
+    }
 
     let progressTimer: number | undefined;
 
@@ -494,28 +721,27 @@ export default function Upload({
       setErrorMessage("");
       setSuccessMessage("");
       setProgressStatus("running");
-
       setScanProgress(10);
-      setScanStage("Uploading file to quarantine...");
+      setScanStage("Uploading the file to quarantine...");
 
       progressTimer = window.setInterval(() => {
-        setScanProgress((current) => {
-          if (current < 35) {
-            setScanStage("Uploading file to quarantine...");
-            return current + 5;
+        setScanProgress((currentProgress) => {
+          if (currentProgress < 35) {
+            setScanStage("Uploading the file to quarantine...");
+            return currentProgress + 5;
           }
 
-          if (current < 65) {
-            setScanStage("File is quarantined. Mandatory antivirus scan running...");
-            return current + 4;
+          if (currentProgress < 65) {
+            setScanStage("Running the mandatory antivirus scan...");
+            return currentProgress + 4;
           }
 
-          if (current < 90) {
-            setScanStage("Checking scan result and security status...");
-            return current + 2;
+          if (currentProgress < 90) {
+            setScanStage("Finalizing security information...");
+            return currentProgress + 2;
           }
 
-          return current;
+          return currentProgress;
         });
       }, 400);
 
@@ -537,7 +763,9 @@ export default function Upload({
         metadata: {
           run_ocr: formData.runOcr,
           virus_scan_required: true,
-          uploaded_from: modalMode ? "project_or_documents_modal" : "web_dashboard",
+          uploaded_from: modalMode
+            ? "project_or_documents_modal"
+            : "web_dashboard",
           intake_step: "quarantine_auto_scan",
           intake_note:
             "Uploaded document is placed in quarantine and scanning is mandatory before active use.",
@@ -549,19 +777,18 @@ export default function Upload({
       }
 
       resetForm(false);
-
       setProgressStatus("success");
       setScanProgress(100);
 
       if (uploadedDocument?.scan_status === "pending") {
-        setScanStage("Document saved in quarantine. Manual scan may be required.");
+        setScanStage("Upload completed. Antivirus scanning is pending.");
         setSuccessMessage(
-          "Document uploaded successfully and placed in quarantine. It is waiting for mandatory antivirus scan."
+          "The document was uploaded and placed in quarantine for mandatory scanning."
         );
       } else {
-        setScanStage("Upload completed. Document security status updated.");
+        setScanStage("Upload and security processing completed.");
         setSuccessMessage(
-          "Document uploaded successfully. The backend security pipeline updated the document status."
+          "The document was uploaded successfully and its security status was updated."
         );
       }
 
@@ -570,7 +797,7 @@ export default function Upload({
       if (modalMode) {
         window.setTimeout(() => {
           onClose?.();
-        }, 1200);
+        }, 1100);
       }
     } catch (error) {
       if (progressTimer) {
@@ -590,278 +817,271 @@ export default function Upload({
 
   const showProgress = uploading || scanProgress > 0;
 
-  return (
+  const content = (
     <div
-      className={
-        modalMode
-          ? "bg-[#0f0f1b] font-sans text-slate-200 selection:bg-blue-500/30"
-          : "flex h-screen overflow-hidden bg-[#0f0f1b] font-sans text-slate-200 selection:bg-blue-500/30"
-      }
+      className={cn(
+        "flex min-h-0 flex-1 flex-col bg-[#f8fafc]",
+        modalMode ? "h-full" : "min-h-screen"
+      )}
     >
-      {!modalMode && <AdminSidebar />}
-
-      <main
-        className={
-          modalMode
-            ? "flex min-w-0 flex-col"
-            : "flex min-w-0 flex-1 flex-col overflow-hidden"
-        }
-      >
-        {!modalMode && (
-          <header className="z-10 flex h-16 items-center justify-between border-b border-slate-800/50 bg-[#0f0f1b]/80 px-8 backdrop-blur-md">
-            <div className="max-w-2xl flex-1">
-              <div className="group relative">
-                <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-blue-400"
-                  size={18}
-                />
-
-                <input
-                  type="text"
-                  placeholder="Search for documents, projects, or metadata..."
-                  className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 py-2 pl-10 pr-12 text-sm text-slate-300 placeholder:text-slate-600 transition-all focus:border-blue-500/50 focus:bg-slate-900 focus:outline-none"
-                />
-
-                <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
-                  <Command size={10} />
-                  <span>K</span>
-                </div>
-              </div>
+      <div className="flex shrink-0 flex-col gap-4 border-b border-slate-200 bg-white px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <UploadCloud size={19} />
             </div>
 
-            <div className="flex items-center gap-6">
-              <button
-                type="button"
-                className="relative rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-800 hover:text-white"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-[#0f0f1b] bg-red-500" />
-              </button>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-slate-900">
+                Upload Document
+              </h1>
 
-              <div className="h-8 w-px bg-slate-800" />
-
-              <div className="group flex cursor-pointer items-center gap-3 pl-2">
-                <div className="hidden text-right sm:block">
-                  <p className="text-sm font-semibold leading-none text-slate-200">
-                    DMS User
-                  </p>
-                  <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                    Document Management
-                  </p>
-                </div>
-
-                <div className="relative">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-800 bg-blue-700/40 text-xs font-semibold text-white transition-colors group-hover:border-slate-600">
-                    DU
-                  </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#0f0f1b] bg-green-500" />
-                </div>
-
-                <ChevronDown
-                  size={14}
-                  className="text-slate-500 group-hover:text-slate-300"
-                />
-              </div>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Add a document to the secure DMS workflow.
+              </p>
             </div>
-          </header>
-        )}
+          </div>
+        </div>
 
-        <div
-          className={
-            modalMode
-              ? "p-6"
-              : "custom-scrollbar flex-1 overflow-y-auto p-8"
-          }
-        >
-          <div className="w-full">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white">
-                  Upload Document
-                </h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  Upload records into the secure DMS pipeline.
-                </p>
-              </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {lockProjectSelection && defaultProjectId && (
+            <span className="inline-flex max-w-[300px] items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+              <FolderOpen size={13} />
+              <span className="truncate">
+                {projectLabel || `Project #${defaultProjectId}`}
+              </span>
+            </span>
+          )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  resetForm();
+          <button
+            type="button"
+            onClick={loadLookups}
+            disabled={loadingLookups || uploading}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingLookups ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCcw size={14} />
+            )}
+            Refresh
+          </button>
+        </div>
+      </div>
 
-                  if (modalMode) {
-                    onClose?.();
-                  }
-                }}
-                disabled={uploading}
-                className="rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-300 transition hover:border-slate-700 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {modalMode ? "Close" : "Cancel"}
-              </button>
-            </div>
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-5 p-5 lg:p-6">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+              <PipelineStep
+                number={1}
+                title="Upload"
+                text="Select a file and add its metadata."
+                icon={<UploadCloud size={16} />}
+              />
 
-            <div className="mb-6 grid gap-3 lg:grid-cols-5">
-              <PipelineHint
-                icon={<UploadCloud size={17} />}
-                title="1. Upload"
-                text="User uploads document with metadata."
+              <PipelineStep
+                number={2}
+                title="Quarantine"
+                text="The file remains isolated after upload."
+                icon={<ShieldCheck size={16} />}
               />
-              <PipelineHint
-                icon={<ShieldCheck size={17} />}
-                title="2. Quarantine"
-                text="File is isolated and not trusted yet."
+
+              <PipelineStep
+                number={3}
+                title="Scan"
+                text="Antivirus scanning is always required."
+                icon={<Bug size={16} />}
               />
-              <PipelineHint
-                icon={<Bug size={17} />}
-                title="3. Scan"
-                text="Antivirus scan is mandatory."
+
+              <PipelineStep
+                number={4}
+                title="Extract"
+                text="Optional OCR improves document search."
+                icon={<ScanSearch size={16} />}
               />
-              <PipelineHint
-                icon={<ScanSearch size={17} />}
-                title="4. Extract"
-                text="Safe plaintext and OCR text support search."
-              />
-              <PipelineHint
-                icon={<LockKeyhole size={17} />}
-                title="5. Protect"
-                text="Clean documents are encrypted and controlled."
+
+              <PipelineStep
+                number={5}
+                title="Protect"
+                text="Access and encryption rules are applied."
+                icon={<LockKeyhole size={16} />}
               />
             </div>
 
             {errorMessage && (
-              <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                <AlertCircle size={18} className="mt-0.5 shrink-0" />
-                <span>{errorMessage}</span>
-              </div>
+              <AlertBox type="error" message={errorMessage} />
             )}
 
             {successMessage && (
-              <div className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-                <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-                <span>{successMessage}</span>
-              </div>
+              <AlertBox type="success" message={successMessage} />
             )}
 
-            <form
-              onSubmit={handleSubmit}
-              className="grid gap-6 xl:grid-cols-[1fr_1.2fr]"
-            >
-              <div className="space-y-5">
-                <div className="rounded-xl border border-dashed border-slate-700 bg-[#141426] p-6">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+              <section className="space-y-4 xl:col-span-5">
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    "flex min-h-[285px] cursor-pointer flex-col items-center justify-center",
+                    "rounded-2xl border-2 border-dashed bg-white px-6 text-center",
+                    "transition",
+                    isDragging
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"
+                  )}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={allowedFileExtensions.join(",")}
+                    onChange={handleFileInputChange}
+                    className="hidden"
+                  />
+
                   <div
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`flex min-h-[330px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-8 text-center transition ${
-                      isDragging
-                        ? "border-blue-500 bg-blue-500/10"
-                        : "border-slate-700 bg-slate-900/30 hover:border-blue-500/60 hover:bg-slate-900/60"
-                    }`}
+                    className={cn(
+                      "flex h-16 w-16 items-center justify-center rounded-2xl",
+                      selectedFile
+                        ? "bg-emerald-50 text-emerald-600"
+                        : "bg-blue-50 text-blue-600"
+                    )}
                   >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept={allowedFileExtensions.join(",")}
-                      onChange={handleFileInputChange}
-                      className="hidden"
-                    />
-
-                    <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-500/10 text-blue-500">
-                      <UploadCloud size={36} />
-                    </div>
-
-                    <h2 className="text-2xl font-semibold text-white">
-                      {selectedFile ? "File selected" : "Drag file here"}
-                    </h2>
-
-                    <p className="mt-3 max-w-[300px] text-sm leading-6 text-slate-500">
-                      {selectedFile
-                        ? selectedFile.name
-                        : "Drop your file here or click to browse from your device."}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        fileInputRef.current?.click();
-                      }}
-                      disabled={uploading}
-                      className="mt-6 rounded-xl bg-blue-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Select File
-                    </button>
-
-                    <p className="mt-4 text-[11px] uppercase tracking-wider text-slate-600">
-                      Max file size: 100MB
-                    </p>
+                    {selectedFile ? (
+                      <CheckCircle2 size={29} />
+                    ) : (
+                      <UploadCloud size={29} />
+                    )}
                   </div>
+
+                  <h2 className="mt-5 text-base font-bold text-slate-900">
+                    {selectedFile
+                      ? "Document selected"
+                      : "Drop a document here"}
+                  </h2>
+
+                  <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">
+                    {selectedFile
+                      ? selectedFile.name
+                      : "Drag and drop one file, or click this area to browse your device."}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    disabled={uploading}
+                    className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <UploadCloud size={15} />
+                    {selectedFile ? "Change file" : "Choose file"}
+                  </button>
+
+                  <p className="mt-3 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    Maximum file size: 100 MB
+                  </p>
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl border border-slate-800/50 bg-[#141426] px-4 py-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-blue-400">
-                      <FileText size={20} />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                      <FileText size={18} />
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-200">
-                        {selectedFile ? selectedFile.name : "No file selected"}
-                      </div>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="truncate text-sm font-semibold text-slate-800"
+                        title={selectedFile?.name || "No file selected"}
+                      >
+                        {selectedFile?.name || "No file selected"}
+                      </p>
 
-                      <div className="text-xs text-slate-500">
+                      <p className="mt-1 text-[11px] text-slate-400">
                         {selectedFile
-                          ? `${formatBytes(selectedFile.size)} • ${getFileExtension(
+                          ? `${formatBytes(
+                              selectedFile.size
+                            )} · ${getFileExtension(
                               selectedFile.name
                             ).toUpperCase()}`
-                          : "Waiting for upload..."}
-                      </div>
+                          : "Waiting for a document file"}
+                      </p>
+                    </div>
+
+                    {selectedFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFile(null);
+
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = "";
+                          }
+                        }}
+                        disabled={uploading}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        aria-label="Remove selected file"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <Info
+                      size={18}
+                      className="mt-0.5 shrink-0 text-blue-600"
+                    />
+
+                    <div>
+                      <p className="text-sm font-semibold text-blue-800">
+                        Secure upload rule
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-blue-700">
+                        Every file enters quarantine first. It cannot be used
+                        until the backend security checks approve it.
+                      </p>
                     </div>
                   </div>
-
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      selectedFile ? "bg-emerald-500" : "bg-slate-600"
-                    }`}
-                  />
                 </div>
 
-                <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-200">
-                    <Info size={16} />
-                    Important security rule
-                  </div>
-                  <p className="text-xs leading-6 text-blue-100/80">
-                    After upload, the document is placed in quarantine. It
-                    cannot be opened or downloaded until the backend security
-                    pipeline approves it.
-                  </p>
-                </div>
+                <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-600">
+                    Supported file formats
+                  </summary>
 
-                <div className="rounded-xl border border-slate-800/50 bg-[#141426] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Allowed files
-                  </p>
-                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                  <p className="mt-3 text-xs leading-5 text-slate-400">
                     {allowedFileText}
                   </p>
-                </div>
-              </div>
+                </details>
+              </section>
 
-              <div className="rounded-xl border border-slate-800/50 bg-[#141426] p-6">
-                <div className="mb-6 flex items-center gap-2 border-b border-slate-800/50 pb-4">
-                  <FileText size={20} className="text-blue-400" />
-                  <h2 className="text-lg font-semibold text-white">
-                    Metadata Entry
-                  </h2>
-                </div>
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm xl:col-span-7">
+                <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <FileText size={17} />
+                  </div>
 
-                <div className="space-y-4">
                   <div>
-                    <label className="mb-2 block text-sm text-slate-400">
-                      Document Title <span className="text-red-400">*</span>
-                    </label>
+                    <h2 className="text-sm font-bold text-slate-900">
+                      Document Information
+                    </h2>
+
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Add only the metadata needed to identify this document.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-5">
+                  <div>
+                    <FieldLabel required>Document title</FieldLabel>
 
                     <input
                       value={formData.title}
@@ -869,142 +1089,132 @@ export default function Upload({
                         updateField("title", event.target.value)
                       }
                       disabled={uploading}
-                      className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-500/50 focus:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-                      placeholder="e.g. Site Survey Report Phase 1"
+                      placeholder="Example: Site Survey Report Phase 1"
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label className="mb-2 block text-sm text-slate-400">
-                        Project Association
-                      </label>
+                      <FieldLabel>Project association</FieldLabel>
 
                       {lockProjectSelection && defaultProjectId ? (
-                        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
-                          {projectLabel || `Project #${defaultProjectId}`}
-                          <p className="mt-1 text-[11px] text-blue-200/70">
-                            This document will be uploaded under this project.
-                          </p>
+                        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700">
+                          <FolderOpen size={15} className="shrink-0" />
+
+                          <span className="truncate">
+                            {projectLabel || `Project #${defaultProjectId}`}
+                          </span>
                         </div>
                       ) : (
-                        <select
+                        <SelectField
+                          label=""
                           value={formData.projectId}
-                          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                            updateField("projectId", event.target.value)
-                          }
                           disabled={uploading || loadingLookups}
-                          className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-300 outline-none focus:border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-60"
+                          onChange={(value) =>
+                            updateField("projectId", value)
+                          }
                         >
                           <option value="">
                             {loadingLookups
                               ? "Loading projects..."
-                              : "No Project / Optional"}
+                              : "No project / optional"}
                           </option>
 
                           {projects.map((project) => (
-                            <option key={project.id} value={String(project.id)}>
+                            <option
+                              key={String(project.id)}
+                              value={String(project.id)}
+                            >
                               {project.name}
                               {project.code ? ` (${project.code})` : ""}
                             </option>
                           ))}
-                        </select>
+                        </SelectField>
                       )}
                     </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm text-slate-400">
-                        Category <span className="text-red-400">*</span>
-                      </label>
+                    <SelectField
+                      label="Category"
+                      value={formData.categoryId}
+                      required
+                      disabled={uploading || loadingLookups}
+                      onChange={(value) =>
+                        updateField("categoryId", value)
+                      }
+                    >
+                      <option value="">
+                        {loadingLookups
+                          ? "Loading categories..."
+                          : "Select a category"}
+                      </option>
 
-                      <select
-                        value={formData.categoryId}
-                        onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                          updateField("categoryId", event.target.value)
-                        }
-                        disabled={uploading || loadingLookups}
-                        className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-300 outline-none focus:border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <option value="">
-                          {loadingLookups
-                            ? "Loading categories..."
-                            : "Select Category..."}
+                      {categories.map((category) => (
+                        <option
+                          key={String(category.id)}
+                          value={String(category.id)}
+                        >
+                          {category.name}
                         </option>
-
-                        {categories.map((category) => (
-                          <option
-                            key={category.id}
-                            value={String(category.id)}
-                          >
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                      ))}
+                    </SelectField>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm text-slate-400">
-                        Document Type <span className="text-red-400">*</span>
-                      </label>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <SelectField
+                      label="Document type"
+                      value={formData.documentType}
+                      required
+                      disabled={uploading}
+                      onChange={(value) =>
+                        updateField(
+                          "documentType",
+                          value as DocumentType
+                        )
+                      }
+                    >
+                      <option value="">Select a document type</option>
 
-                      <select
-                        value={formData.documentType}
-                        onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                          updateField(
-                            "documentType",
-                            event.target.value as DocumentType
-                          )
-                        }
-                        disabled={uploading}
-                        className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-300 outline-none focus:border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <option value="">Select Type...</option>
+                      {documentTypeOptions.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </SelectField>
 
-                        {documentTypeOptions.map((type) => (
-                          <option key={type.value} value={type.value}>
-                            {type.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <SelectField
+                      label="Security level"
+                      value={formData.securityLevel}
+                      disabled={uploading}
+                      onChange={(value) =>
+                        updateField(
+                          "securityLevel",
+                          value as DocumentSecurityLevel
+                        )
+                      }
+                    >
+                      {securityLevelOptions.map((level) => (
+                        <option key={level.value} value={level.value}>
+                          {level.label}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm text-slate-400">
-                        Security Level
-                      </label>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-slate-600">
+                      {selectedSecurity?.label || "Security information"}
+                    </p>
 
-                      <select
-                        value={formData.securityLevel}
-                        onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                          updateField(
-                            "securityLevel",
-                            event.target.value as DocumentSecurityLevel
-                          )
-                        }
-                        disabled={uploading}
-                        className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-300 outline-none focus:border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {securityLevelOptions.map((level) => (
-                          <option key={level.value} value={level.value}>
-                            {level.label}
-                          </option>
-                        ))}
-                      </select>
-
-                      <p className="mt-2 text-[11px] leading-5 text-slate-600">
-                        {getSecurityHelper(formData.securityLevel)}
-                      </p>
-                    </div>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                      {getSecurityHelper(formData.securityLevel)}
+                    </p>
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm text-slate-400">
-                      Tags
-                    </label>
+                    <FieldLabel>Tags</FieldLabel>
 
-                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 px-3 py-2.5 focus-within:border-blue-500/50">
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-50">
                       {formData.tags.length > 0 && (
                         <div className="mb-2 flex flex-wrap gap-2">
                           {formData.tags.map((tag) => (
@@ -1013,10 +1223,11 @@ export default function Upload({
                               type="button"
                               onClick={() => removeTag(tag)}
                               disabled={uploading}
-                              className="inline-flex items-center gap-1 rounded-md bg-blue-500/20 px-2.5 py-1 text-xs text-blue-400 hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
                             >
+                              <Tags size={11} />
                               {tag}
-                              <X size={12} />
+                              <X size={11} />
                             </button>
                           ))}
                         </div>
@@ -1030,159 +1241,162 @@ export default function Upload({
                         onKeyDown={handleTagKeyDown}
                         onBlur={handleAddTag}
                         disabled={uploading}
-                        className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-                        placeholder="Type tag and press Enter..."
+                        placeholder="Type a tag and press Enter"
+                        className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60"
                       />
                     </div>
-
-                    <p className="mt-2 text-[11px] text-slate-600">
-                      Use tags for easier retrieval later.
-                    </p>
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm text-slate-400">
-                      Description / Remarks
-                    </label>
+                    <FieldLabel>Description / remarks</FieldLabel>
 
                     <textarea
-                      rows={5}
+                      rows={4}
                       value={formData.description}
-                      onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                      onChange={(
+                        event: ChangeEvent<HTMLTextAreaElement>
+                      ) =>
                         updateField("description", event.target.value)
                       }
                       disabled={uploading}
-                      className="w-full resize-none rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-blue-500/50 focus:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-                      placeholder="Enter any additional notes about this document..."
+                      placeholder="Add a short note about this document..."
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
-                  <div className="rounded-xl border border-slate-800/50 bg-slate-950/40 p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                      <ShieldCheck size={17} className="text-emerald-400" />
-                      Security Processing
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={17} className="text-blue-600" />
+
+                      <h3 className="text-sm font-bold text-slate-800">
+                        Security Processing
+                      </h3>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-5 text-sm text-slate-400">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={formData.runOcr}
-                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                            updateField("runOcr", event.target.checked)
-                          }
-                          disabled={uploading}
-                          className="h-4 w-4 rounded border-slate-700 bg-slate-900 accent-blue-600 disabled:cursor-not-allowed"
-                        />
-                        Run OCR
-                      </label>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <SecurityOption
+                        title="Run OCR"
+                        description="Extract text for search and retrieval."
+                        checked={formData.runOcr}
+                        disabled={uploading}
+                        onChange={(checked) =>
+                          updateField("runOcr", checked)
+                        }
+                      />
 
-                      <label className="flex items-center gap-2 text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={true}
-                          disabled
-                          className="h-4 w-4 rounded border-slate-700 bg-slate-900 accent-blue-600 disabled:cursor-not-allowed"
-                        />
-                        Virus Scan Required
-                      </label>
+                      <SecurityOption
+                        title="Virus scan required"
+                        description="Mandatory and controlled by the backend."
+                        checked
+                        locked
+                      />
                     </div>
-
-                    <p className="mt-3 text-xs leading-6 text-slate-500">
-                      Virus scanning is mandatory. The user cannot bypass it.
-                      The backend places the file in quarantine and controls the
-                      real scan/security decision.
-                    </p>
 
                     {showProgress && (
-                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                        <div className="mb-2 flex items-center justify-between gap-4 text-xs">
-                          <span
-                            className={getProgressTextColor(
-                              scanProgress,
-                              progressStatus
-                            )}
-                          >
-                            {scanStage}
-                          </span>
-                          <span className="font-semibold text-white">
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p
+                              className={cn(
+                                "text-xs font-semibold",
+                                getProgressTextClass(progressStatus)
+                              )}
+                            >
+                              {scanStage}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              The final security decision comes from the backend.
+                            </p>
+                          </div>
+
+                          <span className="text-sm font-bold text-slate-800">
                             {scanProgress}%
                           </span>
                         </div>
 
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                           <div
-                            className={`h-full rounded-full transition-all duration-500 ${getProgressColor(
-                              scanProgress,
-                              progressStatus
-                            )}`}
+                            className={cn(
+                              "h-full rounded-full transition-all duration-500",
+                              getProgressColor(
+                                scanProgress,
+                                progressStatus
+                              )
+                            )}
                             style={{ width: `${scanProgress}%` }}
                           />
-                        </div>
-
-                        <div className="mt-2 flex justify-between text-[10px] text-slate-600">
-                          <span>Not scanned</span>
-                          <span>Scanning</span>
-                          <span>Scanned</span>
                         </div>
                       </div>
                     )}
                   </div>
-
-                  <div className="flex flex-col gap-4 pt-1 sm:flex-row sm:items-center sm:justify-between">
-                    <button
-                      type="button"
-                      onClick={() => resetForm()}
-                      disabled={uploading}
-                      className="rounded-xl border border-slate-800 px-5 py-3 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Reset Form
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={uploading || loadingLookups}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {uploading ? (
-                        <>
-                          <Loader2 size={17} className="animate-spin" />
-                          Uploading & Scanning...
-                        </>
-                      ) : (
-                        <>
-                          <UploadCloud size={17} />
-                          Upload Document
-                        </>
-                      )}
-                    </button>
-                  </div>
                 </div>
-              </div>
-            </form>
+              </section>
+            </div>
           </div>
-        </div>
-      </main>
+
+          <div className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-6">
+            <p className="text-[11px] leading-4 text-slate-400">
+              Required: file, title, category and document type.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => resetForm()}
+                disabled={uploading}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Reset
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  onClose?.();
+                }}
+                disabled={uploading}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {modalMode ? "Cancel" : "Close"}
+              </button>
+
+              <button
+                type="submit"
+                disabled={uploading || loadingLookups}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud size={16} />
+                    Upload document
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
-}
 
-function PipelineHint({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
+  if (modalMode) {
+    return content;
+  }
+
   return (
-    <div className="rounded-xl border border-slate-800/50 bg-[#141426] p-4">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-100">
-        <span className="text-blue-400">{icon}</span>
-        {title}
-      </div>
-      <p className="text-xs leading-5 text-slate-500">{text}</p>
+    <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
+      <AdminSidebar />
+
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {content}
+      </main>
     </div>
   );
 }

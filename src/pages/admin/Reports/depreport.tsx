@@ -1,63 +1,50 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ElementType, ReactNode } from "react";
+import { Link, NavLink } from "react-router-dom";
 import {
-  LayoutDashboard,
+  AlertTriangle,
+  BarChart3,
   Bell,
+  Building2,
   ChevronDown,
-  Download,
-  Filter,
-  Search as SearchIcon,
-  SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
-  BarChart3,
+  Download,
+  FileText,
+  FolderKanban,
+  FolderOpen,
+  GitBranch,
+  HardDrive,
   Loader2,
   RefreshCcw,
-  AlertTriangle,
+  Search,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+  UploadCloud,
+  UsersRound,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import {
+  Cell,
+  Pie,
+  PieChart as RechartsPieChart,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
+
 import AdminSidebar from "../AdminSidebar";
+
 import {
   getCurrentUser,
   getDocuments,
   getProjects,
 } from "../../../services/dmsApi";
+
 import type {
   DmsDocument,
   ProjectSummary,
   UserSummary,
 } from "../../../services/dmsApi";
-
-type DepartmentDistributionRow = {
-  id: string;
-  name: string;
-  projects: string;
-  documents: number;
-  utilization: number;
-  storage: string;
-  trend: string;
-  positive: boolean | null;
-  color: string;
-  icon: string;
-  rawStorageBytes: number;
-};
-
-type DepartmentPieRow = {
-  name: string;
-  value: number;
-  color: string;
-};
-
-type SiteStatRow = {
-  id: string;
-  name: string;
-  projectId: string;
-  leadDept: string;
-  docs: number;
-  storage: string;
-  lastActivity: string;
-  trend: string;
-  trendPositive: boolean | null;
-};
 
 type AlertState = {
   type: "success" | "error" | "info";
@@ -66,19 +53,87 @@ type AlertState = {
 
 type ViewMode = "volume" | "storage";
 
+type DepartmentDistributionRow = {
+  id: string;
+  name: string;
+  projectCount: number;
+  documentCount: number;
+  storageBytes: number;
+  storageLabel: string;
+  percentage: number;
+  trend: number;
+  color: string;
+};
+
+type DepartmentPieRow = {
+  name: string;
+  value: number;
+  percentage: number;
+  color: string;
+};
+
+type ProjectActivityRow = {
+  id: number | string;
+  initials: string;
+  name: string;
+  code: string;
+  department: string;
+  documentCount: number;
+  storageBytes: number;
+  storageLabel: string;
+  lastActivityRaw: string | null;
+  lastActivity: string;
+  trend: number;
+};
+
+const PAGE_SIZE = 6;
+
 const departmentColors = [
+  "#2563eb",
   "#10b981",
-  "#6366f1",
-  "#f97316",
-  "#a855f7",
+  "#8b5cf6",
+  "#f59e0b",
   "#ec4899",
   "#06b6d4",
   "#64748b",
 ];
 
-const departmentIcons = ["⛰️", "🛠️", "🏗️", "📋", "🧪", "📁", "🏢"];
+const reportTabs = [
+  {
+    label: "Overview",
+    path: "/reports",
+    icon: BarChart3,
+  },
+  {
+    label: "Document Usage",
+    path: "/reports/docreport",
+    icon: FileText,
+  },
+  {
+    label: "Upload Activity",
+    path: "/reports/uploadrep",
+    icon: UploadCloud,
+  },
+  {
+    label: "Projects",
+    path: "/reports/depreport",
+    icon: UsersRound,
+  },
+  {
+    label: "Versioning",
+    path: "/reports/versioningrep",
+    icon: GitBranch,
+  },
+  {
+    label: "Access & Permissions",
+    path: "/reports/accessreport",
+    icon: ShieldCheck,
+  },
+];
 
-const pageSize = 6;
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 function toLower(value?: string | null): string {
   return value ? String(value).toLowerCase() : "";
@@ -89,7 +144,7 @@ function getReadableStatus(value?: string | null): string {
 
   return value
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatNumber(value: number): string {
@@ -103,20 +158,48 @@ function formatBytes(bytes?: number | string | null): string {
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = numericBytes;
-  let index = 0;
+  let unitIndex = 0;
 
-  while (size >= 1024 && index < units.length - 1) {
-    size = size / 1024;
-    index += 1;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
   }
 
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatRelativeTime(date?: string | null): string {
+  if (!date) return "No activity";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "No activity";
+
+  const difference = Date.now() - parsed.getTime();
+  const minutes = Math.floor(difference / 60000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+
+  if (days < 7) return `${days}d ago`;
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
 }
 
 function getInitials(name?: string | null): string {
-  if (!name) return "DU";
+  if (!name) return "NA";
 
-  const parts = name.trim().split(" ").filter(Boolean);
+  const parts = name.trim().split(/\s+/).filter(Boolean);
 
   if (parts.length === 1) {
     return parts[0].slice(0, 2).toUpperCase();
@@ -132,19 +215,26 @@ function getUserName(user: UserSummary | null): string {
 function getRoleName(user: UserSummary | null): string {
   const role = (user as { role?: unknown } | null)?.role;
 
-  if (!role) return "Reports Controller";
+  if (!role) return "Reports User";
 
   if (typeof role === "string") {
     return getReadableStatus(role);
   }
 
   if (typeof role === "object" && role !== null) {
-    const roleObject = role as { name?: string; slug?: string };
+    const roleObject = role as {
+      name?: string;
+      slug?: string;
+    };
 
-    return roleObject.name || getReadableStatus(roleObject.slug);
+    return (
+      roleObject.name ||
+      getReadableStatus(roleObject.slug) ||
+      "Reports User"
+    );
   }
 
-  return "Reports Controller";
+  return "Reports User";
 }
 
 function getLooseString(row: unknown, keys: string[]): string {
@@ -163,23 +253,33 @@ function getLooseString(row: unknown, keys: string[]): string {
   return "";
 }
 
-function getLooseNestedName(row: unknown, keys: string[]): string {
-  if (!row || typeof row !== "object") return "";
+function getNestedValue(row: unknown, path: string): unknown {
+  if (!row || typeof row !== "object") return undefined;
 
-  const record = row as Record<string, unknown>;
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object") return undefined;
 
-  for (const key of keys) {
-    const value = record[key];
+    return (current as Record<string, unknown>)[segment];
+  }, row);
+}
 
-    if (typeof value === "object" && value !== null) {
-      const nested = value as { name?: unknown; title?: unknown };
+function getNestedName(row: unknown, paths: string[]): string {
+  for (const path of paths) {
+    const value = getNestedValue(row, path);
 
-      if (typeof nested.name === "string" && nested.name.trim()) {
-        return nested.name.trim();
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+
+      if (typeof record.name === "string" && record.name.trim()) {
+        return record.name.trim();
       }
 
-      if (typeof nested.title === "string" && nested.title.trim()) {
-        return nested.title.trim();
+      if (typeof record.title === "string" && record.title.trim()) {
+        return record.title.trim();
       }
     }
   }
@@ -190,7 +290,6 @@ function getLooseNestedName(row: unknown, keys: string[]): string {
 function getDepartmentFromProject(project: ProjectSummary): string {
   const directValue = getLooseString(project, [
     "department_name",
-    "department",
     "lead_department",
     "lead_dept",
     "organization_unit",
@@ -198,22 +297,19 @@ function getDepartmentFromProject(project: ProjectSummary): string {
 
   if (directValue) return directValue;
 
-  const nestedValue = getLooseNestedName(project, [
+  const nestedValue = getNestedName(project, [
     "department",
     "leadDepartment",
     "organization",
     "unit",
   ]);
 
-  if (nestedValue) return nestedValue;
-
-  return "No Department";
+  return nestedValue || "No department";
 }
 
 function getDepartmentFromDocument(document: DmsDocument): string {
   const directValue = getLooseString(document, [
     "department_name",
-    "department",
     "lead_department",
     "lead_dept",
     "organization_unit",
@@ -221,7 +317,7 @@ function getDepartmentFromDocument(document: DmsDocument): string {
 
   if (directValue) return directValue;
 
-  const nestedValue = getLooseNestedName(document, [
+  const nestedValue = getNestedName(document, [
     "department",
     "project.department",
     "leadDepartment",
@@ -231,31 +327,32 @@ function getDepartmentFromDocument(document: DmsDocument): string {
 
   if (nestedValue) return nestedValue;
 
-  const projectDepartment = document.project
-    ? getDepartmentFromProject(document.project as ProjectSummary)
-    : "";
+  if (document.project) {
+    const projectDepartment = getDepartmentFromProject(
+      document.project as ProjectSummary
+    );
 
-  if (projectDepartment && projectDepartment !== "No Department") {
-    return projectDepartment;
+    if (projectDepartment !== "No department") {
+      return projectDepartment;
+    }
   }
 
-  if (document.category?.name) return document.category.name;
+  if (document.category?.name) {
+    return document.category.name;
+  }
 
-  return "No Department";
-}
-
-function getProjectId(project: ProjectSummary): string {
-  return String(project.id);
-}
-
-function getProjectCode(project: ProjectSummary): string {
-  const code = getLooseString(project, ["code", "project_code", "document_code"]);
-
-  return code || `PRJ-${project.id}`;
+  return "No department";
 }
 
 function getProjectName(project: ProjectSummary): string {
   return project.name || `Project #${project.id}`;
+}
+
+function getProjectCode(project: ProjectSummary): string {
+  return (
+    getLooseString(project, ["code", "project_code", "document_code"]) ||
+    `PRJ-${project.id}`
+  );
 }
 
 function documentBelongsToProject(
@@ -278,33 +375,33 @@ function getDocumentDate(document: DmsDocument): string | null {
   return document.updated_at || document.created_at || null;
 }
 
-function formatRelativeTime(date?: string | null): string {
-  if (!date) return "No activity";
+function isWithinPeriod(
+  date?: string | null,
+  startDaysAgo = 0,
+  endDaysAgo = 30
+): boolean {
+  if (!date) return false;
 
   const parsed = new Date(date);
 
-  if (Number.isNaN(parsed.getTime())) return "No activity";
+  if (Number.isNaN(parsed.getTime())) return false;
 
-  const diffMs = Date.now() - parsed.getTime();
-  const diffMinutes = Math.floor(diffMs / 60000);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  end.setDate(end.getDate() - startDaysAgo);
 
-  if (diffMinutes < 1) return "Just now";
-  if (diffMinutes < 60) return `${diffMinutes} mins ago`;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - endDaysAgo);
 
-  const diffHours = Math.floor(diffMinutes / 60);
+  return parsed >= start && parsed <= end;
+}
 
-  if (diffHours < 24) return `${diffHours} hours ago`;
+function calculateTrend(current: number, previous: number): number {
+  if (previous <= 0 && current > 0) return 100;
+  if (previous <= 0) return 0;
 
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays === 1) return "1 day ago";
-  if (diffDays < 30) return `${diffDays} days ago`;
-
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
+  return Math.round(((current - previous) / previous) * 100);
 }
 
 function getProjectLastActivity(
@@ -315,9 +412,14 @@ function getProjectLastActivity(
     documentBelongsToProject(document, project)
   );
 
+  const projectRecord = project as unknown as {
+    updated_at?: string;
+    created_at?: string;
+  };
+
   const dates = [
-    project.updated_at,
-    project.created_at,
+    projectRecord.updated_at,
+    projectRecord.created_at,
     ...relatedDocuments.map(getDocumentDate),
   ]
     .filter((date): date is string => Boolean(date))
@@ -329,246 +431,242 @@ function getProjectLastActivity(
   return new Date(Math.max(...dates)).toISOString();
 }
 
-function isWithinLastDays(date?: string | null, days = 30): boolean {
-  if (!date) return false;
-
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) return false;
-
-  const threshold = new Date();
-  threshold.setDate(threshold.getDate() - days);
-
-  return parsed >= threshold;
-}
-
 function buildDepartmentDistribution(
   documents: DmsDocument[],
   projects: ProjectSummary[],
   mode: ViewMode
 ): DepartmentDistributionRow[] {
-  const map = new Map<
+  const departments = new Map<
     string,
     {
-      documents: number;
-      storage: number;
-      projects: Set<string>;
-      recent: number;
-      previous: number;
+      documentCount: number;
+      storageBytes: number;
+      projectIds: Set<string>;
+      currentCount: number;
+      previousCount: number;
     }
   >();
 
   documents.forEach((document) => {
-    const department = getDepartmentFromDocument(document);
+    const departmentName = getDepartmentFromDocument(document);
 
-    if (!map.has(department)) {
-      map.set(department, {
-        documents: 0,
-        storage: 0,
-        projects: new Set<string>(),
-        recent: 0,
-        previous: 0,
+    if (!departments.has(departmentName)) {
+      departments.set(departmentName, {
+        documentCount: 0,
+        storageBytes: 0,
+        projectIds: new Set<string>(),
+        currentCount: 0,
+        previousCount: 0,
       });
     }
 
-    const current = map.get(department)!;
+    const department = departments.get(departmentName)!;
 
-    current.documents += 1;
-    current.storage += getDocumentStorage(document);
+    department.documentCount += 1;
+    department.storageBytes += getDocumentStorage(document);
 
     if (document.project_id || document.project?.id) {
-      current.projects.add(String(document.project_id || document.project?.id));
+      department.projectIds.add(
+        String(document.project_id || document.project?.id)
+      );
     }
 
-    if (isWithinLastDays(document.created_at || document.updated_at, 30)) {
-      current.recent += 1;
-    }
+    const documentDate = document.created_at || document.updated_at;
 
-    if (
-      !isWithinLastDays(document.created_at || document.updated_at, 30) &&
-      isWithinLastDays(document.created_at || document.updated_at, 60)
-    ) {
-      current.previous += 1;
+    if (isWithinPeriod(documentDate, 0, 30)) {
+      department.currentCount += 1;
+    } else if (isWithinPeriod(documentDate, 31, 60)) {
+      department.previousCount += 1;
     }
   });
 
   projects.forEach((project) => {
-    const department = getDepartmentFromProject(project);
+    const departmentName = getDepartmentFromProject(project);
 
-    if (!map.has(department)) {
-      map.set(department, {
-        documents: 0,
-        storage: 0,
-        projects: new Set<string>(),
-        recent: 0,
-        previous: 0,
+    if (!departments.has(departmentName)) {
+      departments.set(departmentName, {
+        documentCount: 0,
+        storageBytes: 0,
+        projectIds: new Set<string>(),
+        currentCount: 0,
+        previousCount: 0,
       });
     }
 
-    map.get(department)!.projects.add(String(project.id));
+    departments.get(departmentName)!.projectIds.add(String(project.id));
   });
 
-  const totalDocuments = Math.max(1, documents.length);
-  const totalStorage = Math.max(
-    1,
-    documents.reduce((sum, document) => sum + getDocumentStorage(document), 0)
-  );
+  const totalMetric =
+    mode === "storage"
+      ? Math.max(
+          1,
+          documents.reduce(
+            (total, document) => total + getDocumentStorage(document),
+            0
+          )
+        )
+      : Math.max(1, documents.length);
 
-  return Array.from(map.entries())
-    .map(([department, value], index) => {
-      const baseValue = mode === "storage" ? value.storage : value.documents;
-      const totalValue = mode === "storage" ? totalStorage : totalDocuments;
-      const trendValue =
-        value.previous <= 0 && value.recent > 0
-          ? 100
-          : value.previous <= 0
-          ? 0
-          : Math.round(((value.recent - value.previous) / value.previous) * 100);
+  return Array.from(departments.entries())
+    .map(([name, values], index) => {
+      const metric =
+        mode === "storage"
+          ? values.storageBytes
+          : values.documentCount;
 
       return {
-        id: department.toLowerCase().replace(/\s+/g, "-"),
-        name: department,
-        projects: `${value.projects.size} Project${
-          value.projects.size === 1 ? "" : "s"
-        } Active`,
-        documents: value.documents,
-        utilization: Math.round((baseValue / totalValue) * 100),
-        storage: formatBytes(value.storage),
-        rawStorageBytes: value.storage,
-        trend: `${trendValue >= 0 ? "+" : ""}${trendValue}%`,
-        positive: trendValue === 0 ? null : trendValue > 0,
+        id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name,
+        projectCount: values.projectIds.size,
+        documentCount: values.documentCount,
+        storageBytes: values.storageBytes,
+        storageLabel: formatBytes(values.storageBytes),
+        percentage: Math.round((metric / totalMetric) * 100),
+        trend: calculateTrend(
+          values.currentCount,
+          values.previousCount
+        ),
         color: departmentColors[index % departmentColors.length],
-        icon: departmentIcons[index % departmentIcons.length],
       };
     })
     .sort((first, second) =>
       mode === "storage"
-        ? second.rawStorageBytes - first.rawStorageBytes
-        : second.documents - first.documents
+        ? second.storageBytes - first.storageBytes
+        : second.documentCount - first.documentCount
     );
 }
 
-function buildDepartmentPieRows(
+function buildPieRows(
   distribution: DepartmentDistributionRow[],
   mode: ViewMode
 ): DepartmentPieRow[] {
-  const total =
-    mode === "storage"
-      ? distribution.reduce((sum, item) => sum + item.rawStorageBytes, 0)
-      : distribution.reduce((sum, item) => sum + item.documents, 0);
+  const total = distribution.reduce(
+    (sum, item) =>
+      sum +
+      (mode === "storage"
+        ? item.storageBytes
+        : item.documentCount),
+    0
+  );
 
   if (total <= 0) return [];
 
   return distribution.slice(0, 6).map((item) => {
     const value =
       mode === "storage"
-        ? Math.round((item.rawStorageBytes / total) * 100)
-        : Math.round((item.documents / total) * 100);
+        ? item.storageBytes
+        : item.documentCount;
 
     return {
       name: item.name,
       value,
+      percentage: Math.round((value / total) * 100),
       color: item.color,
     };
   });
 }
 
-function buildSiteStats(
+function buildProjectActivityRows(
   projects: ProjectSummary[],
   documents: DmsDocument[]
-): SiteStatRow[] {
-  const projectRows = projects.map((project) => {
+): ProjectActivityRow[] {
+  const rows = projects.map((project) => {
     const relatedDocuments = documents.filter((document) =>
       documentBelongsToProject(document, project)
     );
 
-    const storage = relatedDocuments.reduce(
-      (sum, document) => sum + getDocumentStorage(document),
+    const storageBytes = relatedDocuments.reduce(
+      (total, document) => total + getDocumentStorage(document),
       0
     );
 
-    const recentCount = relatedDocuments.filter((document) =>
-      isWithinLastDays(document.created_at || document.updated_at, 30)
+    const currentCount = relatedDocuments.filter((document) =>
+      isWithinPeriod(
+        document.created_at || document.updated_at,
+        0,
+        30
+      )
     ).length;
 
-    const previousCount = relatedDocuments.filter(
-      (document) =>
-        !isWithinLastDays(document.created_at || document.updated_at, 30) &&
-        isWithinLastDays(document.created_at || document.updated_at, 60)
+    const previousCount = relatedDocuments.filter((document) =>
+      isWithinPeriod(
+        document.created_at || document.updated_at,
+        31,
+        60
+      )
     ).length;
 
-    const trend =
-      previousCount <= 0 && recentCount > 0
-        ? 100
-        : previousCount <= 0
-        ? 0
-        : Math.round(((recentCount - previousCount) / previousCount) * 100);
+    const lastActivityRaw = getProjectLastActivity(project, documents);
 
     return {
-      id: getInitials(getProjectName(project)),
+      id: project.id,
+      initials: getInitials(getProjectName(project)),
       name: getProjectName(project),
-      projectId: getProjectCode(project),
-      leadDept: getDepartmentFromProject(project),
-      docs: relatedDocuments.length,
-      storage: formatBytes(storage),
-      lastActivity: formatRelativeTime(getProjectLastActivity(project, documents)),
-      trend: `${trend >= 0 ? "+" : ""}${trend}%`,
-      trendPositive: trend === 0 ? null : trend > 0,
+      code: getProjectCode(project),
+      department: getDepartmentFromProject(project),
+      documentCount: relatedDocuments.length,
+      storageBytes,
+      storageLabel: formatBytes(storageBytes),
+      lastActivityRaw,
+      lastActivity: formatRelativeTime(lastActivityRaw),
+      trend: calculateTrend(currentCount, previousCount),
     };
   });
 
-  const noProjectDocuments = documents.filter(
+  const unassignedDocuments = documents.filter(
     (document) => !document.project_id && !document.project?.id
   );
 
-  if (noProjectDocuments.length > 0) {
-    const storage = noProjectDocuments.reduce(
-      (sum, document) => sum + getDocumentStorage(document),
+  if (unassignedDocuments.length > 0) {
+    const storageBytes = unassignedDocuments.reduce(
+      (total, document) => total + getDocumentStorage(document),
       0
     );
 
-    projectRows.push({
-      id: "NP",
-      name: "No Project",
-      projectId: "NO-PROJECT",
-      leadDept: "Unassigned",
-      docs: noProjectDocuments.length,
-      storage: formatBytes(storage),
-      lastActivity: formatRelativeTime(
-        noProjectDocuments
-          .map(getDocumentDate)
-          .filter((date): date is string => Boolean(date))
-          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
-      ),
-      trend: "0%",
-      trendPositive: null,
+    const currentCount = unassignedDocuments.filter((document) =>
+      isWithinPeriod(
+        document.created_at || document.updated_at,
+        0,
+        30
+      )
+    ).length;
+
+    const previousCount = unassignedDocuments.filter((document) =>
+      isWithinPeriod(
+        document.created_at || document.updated_at,
+        31,
+        60
+      )
+    ).length;
+
+    const latestDate =
+      unassignedDocuments
+        .map(getDocumentDate)
+        .filter((date): date is string => Boolean(date))
+        .sort(
+          (first, second) =>
+            new Date(second).getTime() - new Date(first).getTime()
+        )[0] || null;
+
+    rows.push({
+      id: "unassigned",
+      initials: "UP",
+      name: "Unassigned documents",
+      code: "NO-PROJECT",
+      department: "Unassigned",
+      documentCount: unassignedDocuments.length,
+      storageBytes,
+      storageLabel: formatBytes(storageBytes),
+      lastActivityRaw: latestDate,
+      lastActivity: formatRelativeTime(latestDate),
+      trend: calculateTrend(currentCount, previousCount),
     });
   }
 
-  return projectRows.sort((first, second) => second.docs - first.docs);
-}
-
-function getDeptColor(dept: string) {
-  const lower = dept.toLowerCase();
-
-  if (lower.includes("geo")) return "text-emerald-400 bg-emerald-400/10";
-  if (lower.includes("engineer")) return "text-indigo-400 bg-indigo-400/10";
-  if (lower.includes("construct")) return "text-orange-400 bg-orange-400/10";
-  if (lower.includes("legal")) return "text-purple-400 bg-purple-400/10";
-  if (lower.includes("unassigned")) return "text-slate-400 bg-slate-400/10";
-
-  return "text-cyan-400 bg-cyan-400/10";
-}
-
-function getDeptDotColor(dept: string) {
-  const lower = dept.toLowerCase();
-
-  if (lower.includes("geo")) return "bg-emerald-400";
-  if (lower.includes("engineer")) return "bg-indigo-400";
-  if (lower.includes("construct")) return "bg-orange-400";
-  if (lower.includes("legal")) return "bg-purple-400";
-
-  return "bg-cyan-400";
+  return rows.sort(
+    (first, second) =>
+      second.documentCount - first.documentCount
+  );
 }
 
 function exportJson(filename: string, payload: unknown): void {
@@ -589,14 +687,322 @@ function exportJson(filename: string, payload: unknown): void {
   window.URL.revokeObjectURL(url);
 }
 
+function Header({
+  user,
+  loading,
+  onRefresh,
+}: {
+  user: UserSummary | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <header className="flex min-h-[78px] shrink-0 items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 lg:px-8">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+          <span>Reports</span>
+          <ChevronRight size={13} />
+          <span className="text-slate-700">Projects</span>
+        </div>
+
+        <h1 className="mt-1 text-lg font-bold text-slate-900">
+          Department & Project Report
+        </h1>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <RefreshCcw size={16} />
+          )}
+
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
+
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        >
+          <Bell size={18} />
+          <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+        </button>
+
+        <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-xl px-1.5 py-1 transition hover:bg-slate-50"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+            {getInitials(getUserName(user))}
+          </div>
+
+          <div className="hidden text-left lg:block">
+            <p className="max-w-[150px] truncate text-sm font-semibold text-slate-800">
+              {getUserName(user)}
+            </p>
+
+            <p className="mt-0.5 max-w-[150px] truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {getRoleName(user)}
+            </p>
+          </div>
+
+          <ChevronDown
+            size={14}
+            className="hidden text-slate-400 lg:block"
+          />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function ReportTabs() {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm shadow-slate-200/40">
+      <div className="flex min-w-max items-center gap-1">
+        {reportTabs.map((tab) => {
+          const Icon = tab.icon;
+
+          return (
+            <NavLink
+              key={tab.path}
+              to={tab.path}
+              end={tab.path === "/reports"}
+              className={({ isActive }) =>
+                cn(
+                  "inline-flex h-10 items-center gap-2 rounded-xl px-3.5",
+                  "text-sm font-semibold transition",
+                  isActive
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                )
+              }
+            >
+              <Icon size={15} />
+              {tab.label}
+            </NavLink>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  helper,
+  icon: Icon,
+}: {
+  title: string;
+  value: string;
+  helper: string;
+  icon: ElementType;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{title}</p>
+
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            {value}
+          </p>
+
+          <p className="mt-2 text-[11px] text-slate-400">{helper}</p>
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon size={21} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrendBadge({ trend }: { trend: number }) {
+  if (trend === 0) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500">
+        No change
+      </span>
+    );
+  }
+
+  const positive = trend > 0;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
+        "text-[10px] font-bold",
+        positive
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-red-200 bg-red-50 text-red-700"
+      )}
+    >
+      {positive ? (
+        <TrendingUp size={12} />
+      ) : (
+        <TrendingDown size={12} />
+      )}
+
+      {positive ? "+" : ""}
+      {trend}%
+    </span>
+  );
+}
+
+function PieTooltip({
+  active,
+  payload,
+  mode,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: DepartmentPieRow;
+  }>;
+  mode: ViewMode;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const row = payload[0]?.payload;
+
+  if (!row) return null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+      <p className="text-xs font-bold text-slate-700">{row.name}</p>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {mode === "storage" ? "Storage share" : "Document share"}:{" "}
+        <span className="font-bold text-slate-900">
+          {row.percentage}%
+        </span>
+      </p>
+    </div>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(currentPage - 1)}
+        disabled={currentPage <= 1}
+        aria-label="Previous page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronLeft size={15} />
+      </button>
+
+      <span className="min-w-[78px] text-center text-xs font-semibold text-slate-600">
+        Page {currentPage} of {totalPages}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => onChange(currentPage + 1)}
+        disabled={currentPage >= totalPages}
+        aria-label="Next page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
+
+function MobileProjectCard({
+  project,
+}: {
+  project: ProjectActivityRow;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-bold text-blue-700">
+          {project.initials}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-slate-800">
+            {project.name}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-400">
+            {project.code}
+          </p>
+        </div>
+
+        <TrendBadge trend={project.trend} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+        <div>
+          <p className="text-[10px] text-slate-400">Documents</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">
+            {formatNumber(project.documentCount)}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] text-slate-400">Storage</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">
+            {project.storageLabel}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="text-[10px] text-slate-400">Department</p>
+        <p className="mt-1 truncate text-xs font-semibold text-slate-700">
+          {project.department}
+        </p>
+      </div>
+
+      <Link
+        to="/alldocuments"
+        className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white transition hover:bg-blue-700"
+      >
+        <FolderOpen size={15} />
+        Open document library
+      </Link>
+    </article>
+  );
+}
+
 export default function Depreport() {
   const [documents, setDocuments] = useState<DmsDocument[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [user, setUser] = useState<UserSummary | null>(null);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [alert, setAlert] = useState<AlertState | null>(null);
+
   const [viewMode, setViewMode] = useState<ViewMode>("volume");
-  const [projectFilter, setProjectFilter] = useState<string>("All Projects");
+  const [projectFilter, setProjectFilter] =
+    useState<string>("All Projects");
   const [search, setSearch] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
 
@@ -605,15 +1011,20 @@ export default function Depreport() {
       setLoading(true);
       setAlert(null);
 
-      const [userData, documentsData, projectsData] = await Promise.all([
-        getCurrentUser().catch(() => null),
-        getDocuments({}).catch(() => []),
-        getProjects({}).catch(() => []),
-      ]);
+      const [userData, documentsData, projectsData] =
+        await Promise.all([
+          getCurrentUser().catch(() => null),
+          getDocuments({}).catch(() => []),
+          getProjects({}).catch(() => []),
+        ]);
 
       setUser(userData);
-      setDocuments(documentsData);
-      setProjects(projectsData);
+      setDocuments(
+        Array.isArray(documentsData) ? documentsData : []
+      );
+      setProjects(
+        Array.isArray(projectsData) ? projectsData : []
+      );
       setCurrentPage(1);
     } catch (error) {
       setAlert({
@@ -621,7 +1032,7 @@ export default function Depreport() {
         message:
           error instanceof Error
             ? error.message
-            : "Failed to load department/project report data.",
+            : "Unable to load the department and project report.",
       });
     } finally {
       setLoading(false);
@@ -635,578 +1046,688 @@ export default function Depreport() {
   const projectOptions = useMemo(
     () => [
       "All Projects",
-      ...projects
-        .map((project) => getProjectName(project))
-        .filter((name): name is string => Boolean(name)),
+      ...Array.from(
+        new Set(
+          projects
+            .map((project) => getProjectName(project))
+            .filter(Boolean)
+        )
+      ),
     ],
     [projects]
   );
 
   const filteredProjects = useMemo(() => {
-    if (projectFilter === "All Projects") return projects;
+    if (projectFilter === "All Projects") {
+      return projects;
+    }
 
-    return projects.filter((project) => getProjectName(project) === projectFilter);
+    return projects.filter(
+      (project) => getProjectName(project) === projectFilter
+    );
   }, [projectFilter, projects]);
 
   const filteredDocuments = useMemo(() => {
-    if (projectFilter === "All Projects") return documents;
+    if (projectFilter === "All Projects") {
+      return documents;
+    }
 
     const selectedProject = projects.find(
       (project) => getProjectName(project) === projectFilter
     );
 
-    if (!selectedProject) return documents;
+    if (!selectedProject) return [];
 
     return documents.filter((document) =>
       documentBelongsToProject(document, selectedProject)
     );
   }, [documents, projectFilter, projects]);
 
-  const distribution = useMemo(
-    () => buildDepartmentDistribution(filteredDocuments, filteredProjects, viewMode),
+  const departmentDistribution = useMemo(
+    () =>
+      buildDepartmentDistribution(
+        filteredDocuments,
+        filteredProjects,
+        viewMode
+      ),
     [filteredDocuments, filteredProjects, viewMode]
   );
 
   const pieRows = useMemo(
-    () => buildDepartmentPieRows(distribution, viewMode),
-    [distribution, viewMode]
+    () => buildPieRows(departmentDistribution, viewMode),
+    [departmentDistribution, viewMode]
   );
 
-  const siteStats = useMemo(
-    () => buildSiteStats(filteredProjects, filteredDocuments),
+  const projectActivity = useMemo(
+    () =>
+      buildProjectActivityRows(
+        filteredProjects,
+        filteredDocuments
+      ),
     [filteredDocuments, filteredProjects]
   );
 
-  const searchedSiteStats = useMemo(() => {
-    const term = search.trim().toLowerCase();
+  const searchedProjectActivity = useMemo(() => {
+    const searchTerm = search.trim().toLowerCase();
 
-    if (!term) return siteStats;
+    if (!searchTerm) return projectActivity;
 
-    return siteStats.filter((site) =>
+    return projectActivity.filter((project) =>
       [
-        site.name,
-        site.projectId,
-        site.leadDept,
-        site.storage,
-        site.lastActivity,
-        site.trend,
+        project.name,
+        project.code,
+        project.department,
+        project.storageLabel,
+        project.lastActivity,
       ]
         .join(" ")
         .toLowerCase()
-        .includes(term)
+        .includes(searchTerm)
     );
-  }, [search, siteStats]);
+  }, [projectActivity, search]);
 
   const totalDocuments = filteredDocuments.length;
-  const totalStorage = filteredDocuments.reduce(
-    (sum, document) => sum + getDocumentStorage(document),
+
+  const totalStorageBytes = filteredDocuments.reduce(
+    (total, document) => total + getDocumentStorage(document),
     0
   );
 
-  const totalPages = Math.max(1, Math.ceil(searchedSiteStats.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const startIndex = (safeCurrentPage - 1) * pageSize;
-  const paginatedSiteStats = searchedSiteStats.slice(
-    startIndex,
-    startIndex + pageSize
+  const departmentCount = departmentDistribution.length;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(searchedProjectActivity.length / PAGE_SIZE)
   );
+
+  const safeCurrentPage = Math.min(
+    Math.max(currentPage, 1),
+    totalPages
+  );
+
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+
+  const paginatedProjects = searchedProjectActivity.slice(
+    startIndex,
+    startIndex + PAGE_SIZE
+  );
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
 
   function exportReport(): void {
     exportJson(
-      `department-project-report-${new Date().toISOString().slice(0, 10)}.json`,
+      `department-project-report-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`,
       {
         generated_at: new Date().toISOString(),
         generated_by: getUserName(user),
-        project_filter: projectFilter,
+        selected_project: projectFilter,
         view_mode: viewMode,
         total_documents: totalDocuments,
-        total_storage: formatBytes(totalStorage),
-        department_distribution: distribution,
-        project_activity: siteStats,
+        total_projects: filteredProjects.length,
+        total_departments: departmentCount,
+        total_storage_bytes: totalStorageBytes,
+        total_storage: formatBytes(totalStorageBytes),
+        department_distribution: departmentDistribution,
+        project_activity: projectActivity,
       }
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#0f1117] font-sans text-slate-300">
+    <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
       <AdminSidebar />
 
-      <main className="flex-1">
-        <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-800/50 bg-[#161922] px-6">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-200">Reports</span>
-              <span className="text-slate-600">/</span>
-              <div className="flex items-center gap-2 text-slate-400">
-                <BarChart3 className="h-4 w-4" />
-                <span className="text-sm">Department & Project Analytics</span>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header
+          user={user}
+          loading={loading}
+          onRefresh={loadData}
+        />
+
+        <div className="custom-scrollbar flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
+            <ReportTabs />
+
+            {alert && (
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    size={17}
+                    className="mt-0.5 shrink-0"
+                  />
+
+                  <span>{alert.message}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAlert(null)}
+                  aria-label="Close alert"
+                  className="text-lg leading-none text-red-500"
+                >
+                  ×
+                </button>
               </div>
-            </div>
-          </div>
+            )}
 
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-[#1e212b] px-3 py-2 text-xs text-slate-300 transition-colors hover:bg-[#252936] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
-              )}
-              Refresh
-            </button>
+            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Department & Project Analytics
+                </h2>
 
-            <button className="relative p-2 text-slate-400 transition-colors hover:text-slate-200">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-            </button>
-
-            <div className="flex items-center gap-3 border-l border-slate-800 pl-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-slate-200">
-                  {getUserName(user)}
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Compare document volume, storage usage and project activity
+                  using current database records.
                 </p>
-                <p className="text-xs text-slate-500">{getRoleName(user)}</p>
               </div>
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-sm font-medium text-white">
-                {getInitials(getUserName(user))}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <FolderKanban
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+
+                  <select
+                    value={projectFilter}
+                    onChange={(event) => {
+                      setProjectFilter(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-10 max-w-[230px] appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-9 pr-9 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                  >
+                    {projectOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={exportReport}
+                  disabled={loading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download size={16} />
+                  Export data
+                </button>
               </div>
-            </div>
-          </div>
-        </header>
+            </section>
 
-        <div className="p-6">
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h1 className="mb-1 text-2xl font-semibold text-white">
-                Department & Project Reports
-              </h1>
-              <p className="text-sm text-slate-400">
-                Real database comparison of document volume, storage allocation,
-                department grouping, and project site activity.
-              </p>
-            </div>
+            {loading ? (
+              <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm shadow-slate-200/40">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <Loader2 size={23} className="animate-spin" />
+                </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={projectFilter}
-                onChange={(event) => {
-                  setProjectFilter(event.target.value);
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg border border-slate-700 bg-[#1e212b] px-4 py-2 text-sm text-slate-300 outline-none transition-colors hover:bg-[#252936]"
-              >
-                {projectOptions.map((option) => (
-                  <option key={option} value={option} className="bg-[#1e212b]">
-                    {option}
-                  </option>
-                ))}
-              </select>
+                <p className="mt-4 text-sm font-semibold text-slate-700">
+                  Loading project report
+                </p>
 
-              <button className="flex items-center gap-2 rounded-lg border border-slate-700 bg-[#1e212b] px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-[#252936]">
-                <Filter className="h-4 w-4" />
-                <span>{viewMode === "volume" ? "Volume" : "Storage Size"}</span>
-              </button>
+                <p className="mt-1 text-xs text-slate-400">
+                  Retrieving department and project data...
+                </p>
+              </div>
+            ) : (
+              <>
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    title="Documents"
+                    value={formatNumber(totalDocuments)}
+                    helper="Documents in current filter"
+                    icon={FileText}
+                  />
 
-              <button
-                type="button"
-                onClick={exportReport}
-                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-              >
-                <Download className="h-4 w-4" />
-                <span>Export Report</span>
-              </button>
-            </div>
-          </div>
+                  <MetricCard
+                    title="Projects"
+                    value={formatNumber(filteredProjects.length)}
+                    helper={`${formatNumber(projects.length)} total loaded`}
+                    icon={FolderKanban}
+                  />
 
-          {alert && (
-            <div
-              className={`mb-6 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
-                alert.type === "error"
-                  ? "border-red-500/20 bg-red-500/10 text-red-300"
-                  : "border-blue-500/20 bg-blue-500/10 text-blue-300"
-              }`}
-            >
-              <AlertTriangle className="h-4 w-4" />
-              {alert.message}
-            </div>
-          )}
+                  <MetricCard
+                    title="Departments"
+                    value={formatNumber(departmentCount)}
+                    helper="Departments represented"
+                    icon={Building2}
+                  />
 
-          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <MetricCard
-              title="Documents"
-              value={totalDocuments}
-              helper="Documents in current project filter"
-            />
-            <MetricCard
-              title="Projects"
-              value={filteredProjects.length}
-              helper={`${projects.length} total projects loaded`}
-            />
-            <MetricCard
-              title="Storage"
-              value={formatBytes(totalStorage)}
-              helper="Calculated from document file_size"
-            />
-          </div>
+                  <MetricCard
+                    title="Storage Used"
+                    value={formatBytes(totalStorageBytes)}
+                    helper="Real document file size"
+                    icon={HardDrive}
+                  />
+                </section>
 
-          {loading ? (
-            <div className="rounded-xl border border-slate-800/50 bg-[#161922] p-12 text-center text-sm text-slate-400">
-              <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin" />
-              Loading department and project report from database...
-            </div>
-          ) : (
-            <>
-              <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div className="rounded-xl border border-slate-800/50 bg-[#161922] p-5 xl:col-span-2">
-                  <div className="mb-6 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-100">
-                        Department Document Distribution
-                      </h3>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Documents and storage grouped from real department/project
-                        data
-                      </p>
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Department Distribution
+                        </h3>
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Compare departments by document count or storage
+                        </p>
+                      </div>
+
+                      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewMode("volume")}
+                          className={cn(
+                            "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                            viewMode === "volume"
+                              ? "bg-white text-blue-700 shadow-sm"
+                              : "text-slate-500 hover:text-slate-800"
+                          )}
+                        >
+                          Volume
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setViewMode("storage")}
+                          className={cn(
+                            "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                            viewMode === "storage"
+                              ? "bg-white text-blue-700 shadow-sm"
+                              : "text-slate-500 hover:text-slate-800"
+                          )}
+                        >
+                          Storage
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex rounded-lg bg-[#1e212b] p-1">
-                      <button
-                        type="button"
-                        onClick={() => setViewMode("volume")}
-                        className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                          viewMode === "volume"
-                            ? "bg-slate-800 text-slate-300"
-                            : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Volume
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewMode("storage")}
-                        className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                          viewMode === "storage"
-                            ? "bg-slate-800 text-slate-300"
-                            : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Storage Size
-                      </button>
+
+                    <div className="mt-6 space-y-4">
+                      {departmentDistribution.length > 0 ? (
+                        departmentDistribution
+                          .slice(0, 7)
+                          .map((department) => (
+                            <div
+                              key={department.id}
+                              className="rounded-xl border border-slate-200 p-3.5"
+                            >
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <div
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
+                                    style={{
+                                      backgroundColor: department.color,
+                                    }}
+                                  >
+                                    {getInitials(department.name)}
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-800">
+                                      {department.name}
+                                    </p>
+
+                                    <p className="mt-1 text-[11px] text-slate-400">
+                                      {department.projectCount} project
+                                      {department.projectCount === 1 ? "" : "s"} ·{" "}
+                                      {department.documentCount} document
+                                      {department.documentCount === 1 ? "" : "s"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-3 sm:justify-end">
+                                  <TrendBadge trend={department.trend} />
+
+                                  <div className="min-w-[84px] text-right">
+                                    <p className="text-sm font-bold text-slate-800">
+                                      {viewMode === "storage"
+                                        ? department.storageLabel
+                                        : formatNumber(
+                                            department.documentCount
+                                          )}
+                                    </p>
+
+                                    <p className="mt-0.5 text-[10px] text-slate-400">
+                                      {department.percentage}% share
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${department.percentage}%`,
+                                    backgroundColor: department.color,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="flex min-h-[260px] flex-col items-center justify-center text-center">
+                          <Building2
+                            size={28}
+                            className="text-slate-300"
+                          />
+
+                          <p className="mt-3 text-sm font-semibold text-slate-600">
+                            No department data
+                          </p>
+
+                          <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
+                            Assign projects or documents to departments to see
+                            their distribution.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="space-y-5">
-                    {distribution.length > 0 ? (
-                      distribution.map((dept) => (
-                        <div key={dept.id}>
-                          <div className="mb-2 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg">{dept.icon}</span>
-                              <div>
-                                <p className="text-sm font-medium text-slate-200">
-                                  {dept.name}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  {dept.projects}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-6">
-                              <span
-                                className={`text-xs ${
-                                  dept.positive === true
-                                    ? "text-emerald-400"
-                                    : dept.positive === false
-                                    ? "text-red-400"
-                                    : "text-slate-400"
-                                }`}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Department Contribution
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Percentage share of the selected metric
+                      </p>
+                    </div>
+
+                    {pieRows.length > 0 ? (
+                      <>
+                        <div className="relative mt-4 h-[210px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={pieRows}
+                                dataKey="value"
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={58}
+                                outerRadius={82}
+                                paddingAngle={2}
+                                stroke="none"
                               >
-                                {dept.trend} vs previous period
-                              </span>
-                              <div className="text-right">
-                                <p className="text-base font-semibold text-slate-200">
-                                  {formatNumber(dept.documents)}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  {dept.storage}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span
-                              className="w-20 text-xs text-slate-500"
-                              style={{ color: dept.color }}
-                            >
-                              {dept.utilization}% Utilized
+                                {pieRows.map((row) => (
+                                  <Cell
+                                    key={row.name}
+                                    fill={row.color}
+                                  />
+                                ))}
+                              </Pie>
+
+                              <Tooltip
+                                content={
+                                  <PieTooltip mode={viewMode} />
+                                }
+                              />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+
+                          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-2xl font-bold text-slate-900">
+                              {viewMode === "storage"
+                                ? formatBytes(totalStorageBytes)
+                                : formatNumber(totalDocuments)}
                             </span>
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#1e212b]">
-                              <div
-                                className="h-full rounded-full transition-all"
+
+                            <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              {viewMode === "storage"
+                                ? "Total storage"
+                                : "Documents"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {pieRows.map((row) => (
+                            <div
+                              key={row.name}
+                              className="flex items-center gap-3"
+                            >
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full"
                                 style={{
-                                  width: `${dept.utilization}%`,
-                                  backgroundColor: dept.color,
-                                  opacity: 0.8,
+                                  backgroundColor: row.color,
                                 }}
                               />
+
+                              <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600">
+                                {row.name}
+                              </span>
+
+                              <span className="text-xs font-bold text-slate-900">
+                                {row.percentage}%
+                              </span>
                             </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-slate-500">
-                        No department data available yet.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-800/50 bg-[#161922] p-5">
-                  <h3 className="mb-4 text-base font-semibold text-slate-100">
-                    Department Contribution
-                  </h3>
-
-                  <div className="relative mb-4 h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={pieRows}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={75}
-                          paddingAngle={2}
-                          dataKey="value"
-                          stroke="none"
-                        >
-                          {pieRows.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-bold text-white">
-                        {formatNumber(totalDocuments)}
-                      </span>
-                      <span className="text-xs text-slate-500">total Docs</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {pieRows.length > 0 ? (
-                      pieRows.map((item) => (
-                        <div key={item.name} className="flex items-center gap-3">
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: item.color }}
-                          />
-                          <span className="flex-1 text-sm text-slate-400">
-                            {item.name}
-                          </span>
-                          <span className="text-sm font-medium text-slate-200">
-                            {item.value}%
-                          </span>
                         </div>
-                      ))
+                      </>
                     ) : (
-                      <p className="text-sm text-slate-500">
-                        No contribution data available.
-                      </p>
+                      <div className="flex min-h-[310px] flex-col items-center justify-center text-center">
+                        <BarChart3
+                          size={27}
+                          className="text-slate-300"
+                        />
+
+                        <p className="mt-3 text-sm font-semibold text-slate-600">
+                          No contribution data
+                        </p>
+                      </div>
                     )}
                   </div>
-                </div>
-              </div>
+                </section>
 
-              <div className="rounded-xl border border-slate-800/50 bg-[#161922]">
-                <div className="flex flex-col gap-4 border-b border-slate-800/50 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                  <h3 className="text-base font-semibold text-slate-100">
-                    Site-Level Activity Stats
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <label className="relative">
-                      <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+                  <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Project Activity
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Documents, storage and recent activity by project
+                      </p>
+                    </div>
+
+                    <div className="relative w-full lg:max-w-sm">
+                      <Search
+                        size={16}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+
                       <input
                         value={search}
                         onChange={(event) => {
                           setSearch(event.target.value);
                           setCurrentPage(1);
                         }}
-                        placeholder="Search project..."
-                        className="rounded-lg border border-slate-700 bg-[#1e212b] py-2 pl-9 pr-3 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:border-indigo-500"
+                        placeholder="Search projects..."
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
                       />
-                    </label>
-                    <button className="p-2 text-slate-400 transition-colors hover:text-slate-200">
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-800/50">
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Project Name
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Lead Dept
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Docs
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Storage
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Last Activity
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                          Trend
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/50">
-                      {paginatedSiteStats.length > 0 ? (
-                        paginatedSiteStats.map((site) => (
-                          <tr
-                            key={`${site.projectId}-${site.name}`}
-                            className="transition-colors hover:bg-slate-800/30"
-                          >
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-[#1e212b] text-xs font-medium text-slate-400">
-                                  {site.id}
+                  <div className="hidden overflow-x-auto lg:block">
+                    <table className="w-full min-w-[980px] text-left">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/70">
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Project
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Department
+                          </th>
+
+                          <th className="px-5 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Documents
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Storage
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Last Activity
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            30-day Trend
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {paginatedProjects.length > 0 ? (
+                          paginatedProjects.map((project) => (
+                            <tr
+                              key={String(project.id)}
+                              className="border-b border-slate-100 transition last:border-0 hover:bg-slate-50/70"
+                            >
+                              <td className="px-5 py-4">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-bold text-blue-700">
+                                    {project.initials}
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="max-w-[280px] truncate text-sm font-semibold text-slate-800">
+                                      {project.name}
+                                    </p>
+
+                                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                      {project.code}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="text-sm font-medium text-slate-200">
-                                    {site.name}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    ID: {site.projectId}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getDeptColor(
-                                  site.leadDept
-                                )}`}
-                              >
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${getDeptDotColor(
-                                    site.leadDept
-                                  )}`}
-                                />
-                                {site.leadDept}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="text-sm text-slate-200">
-                                {formatNumber(site.docs)}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="text-sm text-slate-200">
-                                {site.storage}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="text-sm text-slate-400">
-                                {site.lastActivity}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span
-                                className={`text-sm font-medium ${
-                                  site.trendPositive === true
-                                    ? "text-emerald-400"
-                                    : site.trendPositive === false
-                                    ? "text-red-400"
-                                    : "text-slate-400"
-                                }`}
-                              >
-                                {site.trendPositive === true
-                                  ? "↗ "
-                                  : site.trendPositive === false
-                                  ? "↘ "
-                                  : "− "}
-                                {site.trend}
-                              </span>
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <span className="inline-flex max-w-[210px] items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                                  <Building2 size={12} />
+                                  <span className="truncate">
+                                    {project.department}
+                                  </span>
+                                </span>
+                              </td>
+
+                              <td className="px-5 py-4 text-center text-sm font-bold text-slate-800">
+                                {formatNumber(project.documentCount)}
+                              </td>
+
+                              <td className="px-5 py-4 text-sm font-semibold text-slate-700">
+                                {project.storageLabel}
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <p className="text-xs font-semibold text-slate-600">
+                                  {project.lastActivity}
+                                </p>
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <TrendBadge trend={project.trend} />
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="px-5 py-14 text-center"
+                            >
+                              <Search
+                                size={28}
+                                className="mx-auto text-slate-300"
+                              />
+
+                              <p className="mt-3 text-sm font-semibold text-slate-600">
+                                No project activity found
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-400">
+                                Change the project filter or search text.
+                              </p>
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={6}
-                            className="px-5 py-10 text-center text-sm text-slate-500"
-                          >
-                            No project activity found for this filter.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-slate-800/50 px-5 py-4">
-                  <p className="text-sm text-slate-500">
-                    Showing {paginatedSiteStats.length} of{" "}
-                    {searchedSiteStats.length} Active Projects
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage <= 1}
-                      onClick={() => setCurrentPage(safeCurrentPage - 1)}
-                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage >= totalPages}
-                      onClick={() => setCurrentPage(safeCurrentPage + 1)}
-                      className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-              </div>
-            </>
-          )}
+
+                  <div className="grid grid-cols-1 gap-4 bg-slate-50/60 p-4 sm:grid-cols-2 lg:hidden">
+                    {paginatedProjects.length > 0 ? (
+                      paginatedProjects.map((project) => (
+                        <MobileProjectCard
+                          key={String(project.id)}
+                          project={project}
+                        />
+                      ))
+                    ) : (
+                      <div className="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+                        <Search
+                          size={26}
+                          className="mx-auto text-slate-300"
+                        />
+
+                        <p className="mt-3 text-sm font-semibold text-slate-600">
+                          No project activity found
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {searchedProjectActivity.length > 0 && (
+                    <div className="flex flex-col gap-4 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-slate-500">
+                        Showing{" "}
+                        <span className="font-semibold text-slate-700">
+                          {startIndex + 1}–
+                          {Math.min(
+                            startIndex + paginatedProjects.length,
+                            searchedProjectActivity.length
+                          )}
+                        </span>{" "}
+                        of{" "}
+                        <span className="font-semibold text-slate-700">
+                          {searchedProjectActivity.length}
+                        </span>{" "}
+                        projects
+                      </p>
+
+                      <Pagination
+                        currentPage={safeCurrentPage}
+                        totalPages={totalPages}
+                        onChange={setCurrentPage}
+                      />
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  helper,
-}: {
-  title: string;
-  value: number | string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-800/50 bg-[#161922] p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-        {title}
-      </p>
-      <p className="mt-2 text-2xl font-semibold text-white">
-        {typeof value === "number" ? formatNumber(value) : value}
-      </p>
-      <p className="mt-1 text-xs text-slate-500">{helper}</p>
     </div>
   );
 }

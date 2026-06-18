@@ -41,6 +41,7 @@ export type UserRole = {
   id?: number | string;
   name?: string;
   slug?: string;
+  permissions?: string[] | null;
 };
 
 export type UserSummary = {
@@ -171,6 +172,16 @@ export type DmsDocument = {
   aiSuggestedCategory?: DocumentCategory | null;
   aiAnalysisLogs?: AiAnalysisLog[];
 
+  /*
+  |--------------------------------------------------------------------------
+  | Optional Geological Metadata Relations
+  |--------------------------------------------------------------------------
+  | Both names are supported so the frontend remains compatible with
+  | snake_case Laravel JSON and any camelCase transformer used later.
+  */
+  geological_record?: GeologicalRecord | null;
+  geologicalRecord?: GeologicalRecord | null;
+
   created_at?: string;
   updated_at?: string;
   deleted_at?: string | null;
@@ -253,6 +264,252 @@ export type UpdateDocumentPayload = {
   security_level?: SecurityLevel;
   tags?: string[];
   metadata?: Record<string, unknown> | null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Geological Records / Metadata Schema Types
+|--------------------------------------------------------------------------
+*/
+
+export type MetadataFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "date"
+  | "boolean"
+  | "select"
+  | "multi_select";
+
+export type GeologicalRecordType =
+  | "general_geological_record"
+  | "geological_report"
+  | "geological_map"
+  | "borehole"
+  | "rock_sample"
+  | "soil_profile"
+  | "lithology_log"
+  | "mineral_occurrence"
+  | "laboratory_result"
+  | "fault_structure"
+  | "groundwater"
+  | "geophysical_survey"
+  | "geochemical_survey"
+  | "exploration_permit"
+  | "field_note"
+  | "other";
+
+export type GeologicalDataQuality =
+  | "verified"
+  | "reviewed"
+  | "provisional"
+  | "estimated"
+  | "unknown";
+
+export type MetadataSchemaField = {
+  id: number | string;
+  metadata_schema_id?: number | string;
+  field_key: string;
+  label: string;
+  field_type: MetadataFieldType | string;
+  unit?: string | null;
+  options?: string[] | null;
+  validation_rules?: string[] | null;
+  is_required?: boolean;
+  is_searchable?: boolean;
+  is_filterable?: boolean;
+  sort_order?: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type MetadataSchema = {
+  id: number | string;
+  name: string;
+  slug?: string;
+  description?: string | null;
+  record_type?: GeologicalRecordType | string | null;
+  version?: number;
+  status?: "active" | "inactive" | string;
+  is_system?: boolean;
+  created_by?: number | string | null;
+  fields?: MetadataSchemaField[];
+  creator?: UserSummary | null;
+  geological_records_count?: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  deleted_at?: string | null;
+};
+
+export type MetadataSchemaFieldPayload = {
+  field_key: string;
+  label: string;
+  field_type: MetadataFieldType;
+  unit?: string | null;
+  options?: string[] | null;
+  validation_rules?: string[] | null;
+  is_required?: boolean;
+  is_searchable?: boolean;
+  is_filterable?: boolean;
+  sort_order?: number;
+};
+
+export type MetadataSchemaFilters = {
+  status?: "active" | "inactive" | string;
+  record_type?: GeologicalRecordType | string;
+  search?: string;
+};
+
+export type CreateMetadataSchemaPayload = {
+  name: string;
+  description?: string | null;
+  record_type?: GeologicalRecordType | string | null;
+  status?: "active" | "inactive";
+  fields?: MetadataSchemaFieldPayload[];
+};
+
+export type UpdateMetadataSchemaPayload =
+  Partial<CreateMetadataSchemaPayload>;
+
+export type GeologicalRecord = {
+  id: number | string;
+  document_id: number | string;
+  metadata_schema_id?: number | string | null;
+  record_type: GeologicalRecordType | string;
+
+  site_name?: string | null;
+  survey_name?: string | null;
+  survey_date?: string | null;
+  geologist_name?: string | null;
+  organization?: string | null;
+
+  country?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  cell?: string | null;
+  village?: string | null;
+
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  elevation?: number | string | null;
+  coordinate_reference_system?: string | null;
+
+  geological_formation?: string | null;
+  rock_type?: string | null;
+  mineral_name?: string | null;
+  commodity?: string | null;
+  source_method?: string | null;
+  data_quality?: GeologicalDataQuality | string | null;
+
+  borehole_code?: string | null;
+  total_depth?: number | string | null;
+  water_level?: number | string | null;
+  aquifer_name?: string | null;
+  aquifer_type?: string | null;
+  yield_rate?: number | string | null;
+
+  fault_name?: string | null;
+  fault_type?: string | null;
+  strike?: number | string | null;
+  dip?: number | string | null;
+  dip_direction?: string | null;
+
+  custom_metadata?: Record<string, unknown> | null;
+  metadata_version?: number;
+  notes?: string | null;
+
+  created_by?: number | string | null;
+  updated_by?: number | string | null;
+
+  document?: Partial<DmsDocument> | null;
+  schema?: MetadataSchema | null;
+  creator?: UserSummary | null;
+  updater?: UserSummary | null;
+
+  created_at?: string | null;
+  updated_at?: string | null;
+  deleted_at?: string | null;
+};
+
+export type GeologicalRecordFilters = {
+  document_id?: number | string;
+  metadata_schema_id?: number | string;
+  record_type?: GeologicalRecordType | string;
+  district?: string;
+  rock_type?: string;
+  mineral_name?: string;
+  borehole_code?: string;
+  project_id?: number | string;
+  search?: string;
+};
+
+export type CreateGeologicalRecordPayload = {
+  document_id: number | string;
+  metadata_schema_id?: number | string | null;
+  record_type: GeologicalRecordType;
+
+  site_name?: string | null;
+  survey_name?: string | null;
+  survey_date?: string | null;
+  geologist_name?: string | null;
+  organization?: string | null;
+
+  country?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  cell?: string | null;
+  village?: string | null;
+
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  elevation?: number | string | null;
+  coordinate_reference_system?: string | null;
+
+  geological_formation?: string | null;
+  rock_type?: string | null;
+  mineral_name?: string | null;
+  commodity?: string | null;
+  source_method?: string | null;
+  data_quality?: GeologicalDataQuality | null;
+
+  borehole_code?: string | null;
+  total_depth?: number | string | null;
+  water_level?: number | string | null;
+  aquifer_name?: string | null;
+  aquifer_type?: string | null;
+  yield_rate?: number | string | null;
+
+  fault_name?: string | null;
+  fault_type?: string | null;
+  strike?: number | string | null;
+  dip?: number | string | null;
+  dip_direction?: string | null;
+
+  custom_metadata?: Record<string, unknown> | null;
+  notes?: string | null;
+};
+
+export type UpdateGeologicalRecordPayload =
+  Partial<Omit<CreateGeologicalRecordPayload, "document_id">> & {
+    document_id?: number | string;
+  };
+
+export type GeologicalSummaryGroup = {
+  record_type?: string;
+  district?: string;
+  total: number | string;
+};
+
+export type GeologicalRecordSummary = {
+  total_records: number;
+  records_by_type: GeologicalSummaryGroup[];
+  records_by_district: GeologicalSummaryGroup[];
+  borehole_records: number;
+  mineral_records: number;
+  groundwater_records: number;
+  mapped_records: number;
 };
 
 export type DocumentAccessStatus = {
@@ -506,6 +763,51 @@ export function unwrapLaravelData<T>(response: LaravelSuccessResponse<T> | T): T
   }
 
   return response as T;
+}
+
+/**
+ * Safely unwrap Laravel collections, including normal arrays and common
+ * paginated response shapes.
+ */
+export function unwrapLaravelCollection<T>(
+  response: LaravelSuccessResponse<unknown> | unknown,
+  collectionKeys: string[] = []
+): T[] {
+  const data = unwrapLaravelData<unknown>(
+    response as LaravelSuccessResponse<unknown> | unknown
+  );
+
+  if (Array.isArray(data)) {
+    return data as T[];
+  }
+
+  if (!isPlainObject(data)) {
+    return [];
+  }
+
+  const keys = [
+    ...collectionKeys,
+    "data",
+    "items",
+    "results",
+  ];
+
+  for (const key of keys) {
+    const candidate = data[key];
+
+    if (Array.isArray(candidate)) {
+      return candidate as T[];
+    }
+
+    if (
+      isPlainObject(candidate) &&
+      Array.isArray(candidate.data)
+    ) {
+      return candidate.data as T[];
+    }
+  }
+
+  return [];
 }
 
 export async function apiRequest<T>(
@@ -777,6 +1079,88 @@ export async function deleteDocumentCategory(
 
 /*
 |--------------------------------------------------------------------------
+| Metadata Schemas
+|--------------------------------------------------------------------------
+*/
+
+export async function getMetadataSchemas(
+  filters?: MetadataSchemaFilters
+): Promise<MetadataSchema[]> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<MetadataSchema[]> | MetadataSchema[]
+  >("/metadata-schemas", {
+    method: "GET",
+    query: filters,
+  });
+
+  return unwrapLaravelCollection<MetadataSchema>(
+    response,
+    ["metadata_schemas", "schemas"]
+  );
+}
+
+export async function getMetadataSchema(
+  id: number | string
+): Promise<MetadataSchema> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<MetadataSchema> | MetadataSchema
+  >(`/metadata-schemas/${id}`, {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<MetadataSchema>(response);
+}
+
+export async function getMetadataSchemasByRecordType(
+  recordType: GeologicalRecordType | string
+): Promise<MetadataSchema[]> {
+  return getMetadataSchemas({
+    status: "active",
+    record_type: recordType,
+  });
+}
+
+export async function createMetadataSchema(
+  payload: CreateMetadataSchemaPayload
+): Promise<MetadataSchema> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<MetadataSchema> | MetadataSchema
+  >("/metadata-schemas", {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<MetadataSchema>(response);
+}
+
+export async function updateMetadataSchema(
+  id: number | string,
+  payload: UpdateMetadataSchemaPayload
+): Promise<MetadataSchema> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<MetadataSchema> | MetadataSchema
+  >(`/metadata-schemas/${id}`, {
+    method: "PUT",
+    body: payload,
+  });
+
+  return unwrapLaravelData<MetadataSchema>(response);
+}
+
+export async function deleteMetadataSchema(
+  id: number | string
+): Promise<unknown> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<unknown> | unknown
+  >(`/metadata-schemas/${id}`, {
+    method: "DELETE",
+  });
+
+  return unwrapLaravelData<unknown>(response);
+}
+
+/*
+|--------------------------------------------------------------------------
 | Projects
 |--------------------------------------------------------------------------
 */
@@ -909,6 +1293,103 @@ export async function deleteDocument(id: number | string): Promise<unknown> {
   );
 
   return unwrapLaravelData<unknown>(response);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Geological Records
+|--------------------------------------------------------------------------
+*/
+
+export async function getGeologicalRecords(
+  filters?: GeologicalRecordFilters
+): Promise<GeologicalRecord[]> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<GeologicalRecord[]> | GeologicalRecord[]
+  >("/geological-records", {
+    method: "GET",
+    query: filters,
+  });
+
+  return unwrapLaravelCollection<GeologicalRecord>(
+    response,
+    ["geological_records", "records"]
+  );
+}
+
+export async function getGeologicalRecord(
+  id: number | string
+): Promise<GeologicalRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<GeologicalRecord> | GeologicalRecord
+  >(`/geological-records/${id}`, {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<GeologicalRecord>(response);
+}
+
+/**
+ * Convenience helper for document details and upload recovery.
+ * The backend allows filtering geological records by document_id.
+ */
+export async function getGeologicalRecordByDocument(
+  documentId: number | string
+): Promise<GeologicalRecord | null> {
+  const records = await getGeologicalRecords({
+    document_id: documentId,
+  });
+
+  return records[0] || null;
+}
+
+export async function createGeologicalRecord(
+  payload: CreateGeologicalRecordPayload
+): Promise<GeologicalRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<GeologicalRecord> | GeologicalRecord
+  >("/geological-records", {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<GeologicalRecord>(response);
+}
+
+export async function updateGeologicalRecord(
+  id: number | string,
+  payload: UpdateGeologicalRecordPayload
+): Promise<GeologicalRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<GeologicalRecord> | GeologicalRecord
+  >(`/geological-records/${id}`, {
+    method: "PUT",
+    body: payload,
+  });
+
+  return unwrapLaravelData<GeologicalRecord>(response);
+}
+
+export async function deleteGeologicalRecord(
+  id: number | string
+): Promise<unknown> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<unknown> | unknown
+  >(`/geological-records/${id}`, {
+    method: "DELETE",
+  });
+
+  return unwrapLaravelData<unknown>(response);
+}
+
+export async function getGeologicalRecordSummary(): Promise<GeologicalRecordSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<GeologicalRecordSummary> | GeologicalRecordSummary
+  >("/geological-records/summary", {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<GeologicalRecordSummary>(response);
 }
 
 /*

@@ -1,16 +1,72 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ElementType, ReactNode } from "react";
+import { Link, NavLink } from "react-router-dom";
+import {
+  BarChart3,
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  RefreshCcw,
+  Search,
+  ShieldCheck,
+  TrendingUp,
+  UploadCloud,
+  UsersRound,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
 import AdminSidebar from "../AdminSidebar";
+
 import {
   apiRequest,
   getCurrentUser,
   getDocuments,
   getProjects,
 } from "../../../services/dmsApi";
+
 import type {
   DmsDocument,
   ProjectSummary,
   UserSummary,
 } from "../../../services/dmsApi";
+
+type AlertState = {
+  type: "success" | "error" | "info";
+  message: string;
+};
+
+type AccessSummary = {
+  total_views?: number;
+  total_downloads?: number;
+  recent_views?: number;
+  recent_downloads?: number;
+  [key: string]: unknown;
+};
+
+type DateRangeOption = {
+  label: string;
+  value: string;
+  days: number;
+};
 
 type UsagePoint = {
   label: string;
@@ -29,49 +85,55 @@ type DocumentUsageRecord = {
   downloads: number;
   lastAccessed: string;
   lastAccessedRaw?: string | null;
-  icon: "pdf" | "doc" | "xls" | "image" | "dwg" | "file";
-  accent: string;
-  projectClass: string;
+  icon: "pdf" | "doc" | "xls" | "image" | "archive" | "file";
   document: DmsDocument;
 };
 
-type DateRangeOption = {
-  label: string;
-  days: number;
-};
-
-type AlertState = {
-  type: "success" | "error" | "info";
-  message: string;
-};
-
-type AccessSummary = {
-  total_views?: number;
-  total_downloads?: number;
-  recent_views?: number;
-  recent_downloads?: number;
-  [key: string]: unknown;
-};
-
-const chartWidth = 760;
-const chartHeight = 248;
-const chartPadding = 22;
-const pageSize = 5;
+const PAGE_SIZE = 6;
 
 const dateOptions: DateRangeOption[] = [
-  { label: "Last 7 Days", days: 7 },
-  { label: "Last 30 Days", days: 30 },
-  { label: "Last Quarter", days: 90 },
-  { label: "Last 12 Months", days: 365 },
+  { label: "Last 7 days", value: "7", days: 7 },
+  { label: "Last 30 days", value: "30", days: 30 },
+  { label: "Last quarter", value: "90", days: 90 },
+  { label: "Last 12 months", value: "365", days: 365 },
 ];
 
-const projectBadgeClasses = [
-  "bg-indigo-500/15 text-indigo-200 ring-1 ring-inset ring-indigo-400/20",
-  "bg-fuchsia-500/15 text-fuchsia-200 ring-1 ring-inset ring-fuchsia-400/20",
-  "bg-amber-500/15 text-amber-200 ring-1 ring-inset ring-amber-400/20",
-  "bg-cyan-500/15 text-cyan-200 ring-1 ring-inset ring-cyan-400/20",
-  "bg-emerald-500/15 text-emerald-200 ring-1 ring-inset ring-emerald-400/20",
+const reportTabs = [
+  {
+    label: "Overview",
+    path: "/reports",
+    icon: BarChart3,
+  },
+  {
+    label: "Document Usage",
+    path: "/reports/docreport",
+    icon: FileText,
+  },
+  {
+    label: "Upload Activity",
+    path: "/reports/uploadrep",
+    icon: UploadCloud,
+  },
+  {
+    label: "Projects",
+    path: "/reports/depreport",
+    icon: UsersRound,
+  },
+  {
+    label: "Versioning",
+    path: "/reports/versioningrep",
+    icon: GitBranch,
+  },
+  {
+    label: "Access & Permissions",
+    path: "/reports/accessreport",
+    icon: ShieldCheck,
+  },
 ];
+
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 function toLower(value?: string | null): string {
   return value ? String(value).toLowerCase() : "";
@@ -82,7 +144,7 @@ function getReadableStatus(value?: string | null): string {
 
   return value
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatNumber(value: number): string {
@@ -96,14 +158,14 @@ function formatBytes(bytes?: number | string | null): string {
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = numericBytes;
-  let index = 0;
+  let unitIndex = 0;
 
-  while (size >= 1024 && index < units.length - 1) {
-    size = size / 1024;
-    index += 1;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
   }
 
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function formatDate(date?: string | null): string {
@@ -120,17 +182,35 @@ function formatDate(date?: string | null): string {
   });
 }
 
-function formatShortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-  });
+function formatRelativeTime(date?: string | null): string {
+  if (!date) return "Never";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "Never";
+
+  const difference = Date.now() - parsed.getTime();
+  const minutes = Math.floor(difference / 60000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+
+  if (days < 7) return `${days}d ago`;
+
+  return formatDate(date);
 }
 
 function getDateDaysAgo(days: number): Date {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() - days);
+
   return date;
 }
 
@@ -141,13 +221,13 @@ function isWithinRange(date?: string | null, days = 30): boolean {
 
   if (Number.isNaN(parsed.getTime())) return false;
 
-  return parsed >= getDateDaysAgo(days);
+  return parsed >= getDateDaysAgo(days - 1);
 }
 
 function getInitials(name?: string | null): string {
   if (!name) return "DU";
 
-  const names = name.trim().split(" ").filter(Boolean);
+  const names = name.trim().split(/\s+/).filter(Boolean);
 
   if (names.length === 1) {
     return names[0].slice(0, 2).toUpperCase();
@@ -163,17 +243,26 @@ function getUserName(user: UserSummary | null): string {
 function getRoleName(user: UserSummary | null): string {
   const role = (user as { role?: unknown } | null)?.role;
 
-  if (!role) return "Reports Controller";
+  if (!role) return "Reports User";
 
-  if (typeof role === "string") return getReadableStatus(role);
-
-  if (typeof role === "object" && role !== null) {
-    const roleObject = role as { name?: string; slug?: string };
-
-    return roleObject.name || getReadableStatus(roleObject.slug);
+  if (typeof role === "string") {
+    return getReadableStatus(role);
   }
 
-  return "Reports Controller";
+  if (typeof role === "object" && role !== null) {
+    const roleObject = role as {
+      name?: string;
+      slug?: string;
+    };
+
+    return (
+      roleObject.name ||
+      getReadableStatus(roleObject.slug) ||
+      "Reports User"
+    );
+  }
+
+  return "Reports User";
 }
 
 function getDocumentTitle(document: DmsDocument): string {
@@ -186,25 +275,39 @@ function getDocumentTitle(document: DmsDocument): string {
 }
 
 function getDocumentType(document: DmsDocument): string {
-  if (document.document_type) return getReadableStatus(document.document_type);
-  if (document.extension) return document.extension.toUpperCase();
+  if (document.document_type) {
+    return getReadableStatus(document.document_type);
+  }
+
+  if (document.extension) {
+    return document.extension.toUpperCase();
+  }
 
   return "File";
 }
 
 function getProjectName(document: DmsDocument): string {
-  return document.project?.name || "No Project";
+  return document.project?.name || "No project";
 }
 
-function getLooseNumber(document: DmsDocument, keys: string[]): number {
+function getLooseNumber(
+  document: DmsDocument,
+  keys: string[]
+): number {
   const rawDocument = document as unknown as Record<string, unknown>;
 
   for (const key of keys) {
     const value = rawDocument[key];
 
-    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
 
-    if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) {
+    if (
+      typeof value === "string" &&
+      value.trim() !== "" &&
+      !Number.isNaN(Number(value))
+    ) {
       return Number(value);
     }
   }
@@ -212,13 +315,18 @@ function getLooseNumber(document: DmsDocument, keys: string[]): number {
   return 0;
 }
 
-function getLooseDate(document: DmsDocument, keys: string[]): string | null {
+function getLooseDate(
+  document: DmsDocument,
+  keys: string[]
+): string | null {
   const rawDocument = document as unknown as Record<string, unknown>;
 
   for (const key of keys) {
     const value = rawDocument[key];
 
-    if (typeof value === "string" && value.trim() !== "") return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
   }
 
   return document.updated_at || document.created_at || null;
@@ -255,90 +363,67 @@ function getLastAccessedDate(document: DmsDocument): string | null {
   ]);
 }
 
-function getIconKind(document: DmsDocument): DocumentUsageRecord["icon"] {
+function getIconKind(
+  document: DmsDocument
+): DocumentUsageRecord["icon"] {
   const extension = toLower(document.extension);
 
   if (extension === "pdf") return "pdf";
   if (["doc", "docx"].includes(extension)) return "doc";
   if (["xls", "xlsx", "csv"].includes(extension)) return "xls";
-  if (["jpg", "jpeg", "png", "webp", "tif", "tiff"].includes(extension)) {
+
+  if (
+    ["jpg", "jpeg", "png", "webp", "tif", "tiff"].includes(extension)
+  ) {
     return "image";
   }
-  if (["dwg", "dxf"].includes(extension)) return "dwg";
+
+  if (["dwg", "dxf", "zip", "rar"].includes(extension)) {
+    return "archive";
+  }
 
   return "file";
 }
 
-function getAccentClass(kind: DocumentUsageRecord["icon"]): string {
-  switch (kind) {
-    case "pdf":
-      return "bg-rose-500/15 text-rose-300 ring-1 ring-inset ring-rose-500/20";
-    case "doc":
-      return "bg-indigo-500/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/20";
-    case "xls":
-      return "bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/20";
-    case "image":
-      return "bg-purple-500/15 text-purple-300 ring-1 ring-inset ring-purple-500/20";
-    case "dwg":
-      return "bg-lime-500/15 text-lime-300 ring-1 ring-inset ring-lime-500/20";
-    default:
-      return "bg-slate-500/15 text-slate-300 ring-1 ring-inset ring-slate-500/20";
-  }
+function buildDocumentRecords(
+  documents: DmsDocument[]
+): DocumentUsageRecord[] {
+  return documents.map((document) => ({
+    id: document.id,
+    name: getDocumentTitle(document),
+    format: document.extension?.toUpperCase() || "FILE",
+    size: formatBytes(document.file_size),
+    type: getDocumentType(document),
+    projectName: getProjectName(document),
+    views: getDocumentViews(document),
+    downloads: getDocumentDownloads(document),
+    lastAccessed: formatDate(getLastAccessedDate(document)),
+    lastAccessedRaw: getLastAccessedDate(document),
+    icon: getIconKind(document),
+    document,
+  }));
 }
 
-function buildDocumentRecords(documents: DmsDocument[]): DocumentUsageRecord[] {
-  return documents.map((document, index) => {
-    const kind = getIconKind(document);
+function buildUsageSeries(
+  records: DocumentUsageRecord[],
+  days: number
+): UsagePoint[] {
+  const interval =
+    days <= 7 ? 1 : days <= 30 ? 5 : days <= 90 ? 15 : 60;
 
-    return {
-      id: document.id,
-      name: getDocumentTitle(document),
-      format: document.extension?.toUpperCase() || "FILE",
-      size: formatBytes(document.file_size),
-      type: getDocumentType(document),
-      projectName: getProjectName(document),
-      views: getDocumentViews(document),
-      downloads: getDocumentDownloads(document),
-      lastAccessed: formatDate(getLastAccessedDate(document)),
-      lastAccessedRaw: getLastAccessedDate(document),
-      icon: kind,
-      accent: getAccentClass(kind),
-      projectClass: projectBadgeClasses[index % projectBadgeClasses.length],
-      document,
-    };
-  });
-}
-
-function buildLinePath(points: number[], maxValue: number) {
-  return points
-    .map((value, index) => {
-      const x =
-        chartPadding +
-        (index * (chartWidth - chartPadding * 2)) /
-          Math.max(points.length - 1, 1);
-      const y =
-        chartHeight -
-        chartPadding -
-        ((maxValue > 0 ? value : 0) / Math.max(maxValue, 1)) *
-          (chartHeight - chartPadding * 2);
-
-      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
-function buildUsageSeries(records: DocumentUsageRecord[], days: number): UsagePoint[] {
-  const interval = days <= 30 ? 5 : days <= 90 ? 15 : 60;
   const rows: UsagePoint[] = [];
 
-  for (let day = days - 1; day >= 0; day -= interval) {
-    const start = getDateDaysAgo(day);
+  for (let offset = days - 1; offset >= 0; offset -= interval) {
+    const start = getDateDaysAgo(offset);
     const end = new Date(start);
-    end.setDate(start.getDate() + interval);
+    end.setDate(start.getDate() + interval - 1);
     end.setHours(23, 59, 59, 999);
 
     const matchingRecords = records.filter((record) => {
-      const date = record.lastAccessedRaw || record.document.updated_at || record.document.created_at;
+      const date =
+        record.lastAccessedRaw ||
+        record.document.updated_at ||
+        record.document.created_at;
 
       if (!date) return false;
 
@@ -350,22 +435,40 @@ function buildUsageSeries(records: DocumentUsageRecord[], days: number): UsagePo
     });
 
     rows.push({
-      label: formatShortDate(start),
-      views: matchingRecords.reduce((sum, record) => sum + record.views, 0),
-      downloads: matchingRecords.reduce((sum, record) => sum + record.downloads, 0),
+      label: start.toLocaleDateString(undefined, {
+        month: "short",
+        day: "2-digit",
+      }),
+      views: matchingRecords.reduce(
+        (total, record) => total + record.views,
+        0
+      ),
+      downloads: matchingRecords.reduce(
+        (total, record) => total + record.downloads,
+        0
+      ),
     });
   }
 
-  return rows.length > 0 ? rows : [{ label: "Today", views: 0, downloads: 0 }];
+  return rows.length > 0
+    ? rows
+    : [{ label: "Today", views: 0, downloads: 0 }];
 }
 
-function matchesProject(record: DocumentUsageRecord, selectedProject: string): boolean {
-  if (selectedProject === "All Projects") return true;
-
-  return record.projectName === selectedProject;
+function matchesProject(
+  record: DocumentUsageRecord,
+  selectedProject: string
+): boolean {
+  return (
+    selectedProject === "All Projects" ||
+    record.projectName === selectedProject
+  );
 }
 
-async function safeRequest<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+async function safeRequest<T>(
+  request: () => Promise<T>,
+  fallback: T
+): Promise<T> {
   try {
     return await request();
   } catch {
@@ -386,274 +489,387 @@ function unwrapData<T>(response: unknown, fallback: T): T {
   return (response as T) ?? fallback;
 }
 
-function MenuIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="M4 6h16" strokeLinecap="round" />
-      <path d="M4 12h16" strokeLinecap="round" />
-      <path d="M4 18h16" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4.25 4.25" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function BellIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      className={className}
-    >
-      <path d="M6.5 9a5.5 5.5 0 1 1 11 0v3.38c0 .73.24 1.44.67 2.03L19.5 16H4.5l1.33-1.59A3.2 3.2 0 0 0 6.5 12.38V9Z" />
-      <path d="M10 19a2 2 0 0 0 4 0" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CalendarIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
-      <path d="M7.5 3.5v3" strokeLinecap="round" />
-      <path d="M16.5 3.5v3" strokeLinecap="round" />
-      <path d="M3.5 9h17" />
-    </svg>
-  );
-}
-
-function FolderIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h4l1.6 2h6.4A2.5 2.5 0 0 1 20.5 9.5v7A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5v-9Z" />
-    </svg>
-  );
-}
-
-function DownloadIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="M12 4v10" strokeLinecap="round" />
-      <path
-        d="m8.5 10.5 3.5 3.5 3.5-3.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M4.5 18.5h15" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ChevronLeftIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="m14.5 7-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className={className}
-    >
-      <path d="m9.5 7 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SidebarIcon({
-  type,
-  className = "h-4 w-4",
+function Header({
+  user,
+  loading,
+  onRefresh,
 }: {
-  type: string;
-  className?: string;
+  user: UserSummary | null;
+  loading: boolean;
+  onRefresh: () => void;
 }) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.7,
-    className,
-  } as const;
+  return (
+    <header className="flex min-h-[78px] shrink-0 items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 lg:px-8">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+          <span>Reports</span>
+          <ChevronRight size={13} />
+          <span className="text-slate-700">Document Usage</span>
+        </div>
 
-  switch (type) {
-    case "reports":
-      return (
-        <svg {...common}>
-          <path d="M5 18.5V11" strokeLinecap="round" />
-          <path d="M12 18.5V6" strokeLinecap="round" />
-          <path d="M19 18.5v-8" strokeLinecap="round" />
-        </svg>
-      );
-    default:
-      return <MenuIcon className={className} />;
-  }
+        <h1 className="mt-1 text-lg font-bold text-slate-900">
+          Document Usage Report
+        </h1>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <RefreshCcw size={16} />
+          )}
+
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
+
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        >
+          <Bell size={18} />
+          <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+        </button>
+
+        <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-xl px-1.5 py-1 transition hover:bg-slate-50"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+            {getInitials(getUserName(user))}
+          </div>
+
+          <div className="hidden text-left lg:block">
+            <p className="max-w-[150px] truncate text-sm font-semibold text-slate-800">
+              {getUserName(user)}
+            </p>
+
+            <p className="mt-0.5 max-w-[150px] truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {getRoleName(user)}
+            </p>
+          </div>
+
+          <ChevronDown
+            size={14}
+            className="hidden text-slate-400 lg:block"
+          />
+        </button>
+      </div>
+    </header>
+  );
 }
 
-function SelectPill({
-  icon,
-  label,
+function ReportTabs() {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm shadow-slate-200/40">
+      <div className="flex min-w-max items-center gap-1">
+        {reportTabs.map((tab) => {
+          const Icon = tab.icon;
+
+          return (
+            <NavLink
+              key={tab.path}
+              to={tab.path}
+              end={tab.path === "/reports"}
+              className={({ isActive }) =>
+                cn(
+                  "inline-flex h-10 items-center gap-2 rounded-xl px-3.5",
+                  "text-sm font-semibold transition",
+                  isActive
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                )
+              }
+            >
+              <Icon size={15} />
+              {tab.label}
+            </NavLink>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
   value,
-  options,
-  onChange,
+  helper,
+  icon: Icon,
 }: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (value: string) => void;
+  title: string;
+  value: number;
+  helper: string;
+  icon: ElementType;
 }) {
   return (
-    <label className="relative inline-flex h-11 items-center gap-2 rounded-xl border border-white/8 bg-slate-800/90 px-4 text-sm font-medium text-slate-200 shadow-[0_8px_30px_rgba(0,0,0,0.18)] transition hover:border-indigo-400/30 hover:bg-slate-800">
-      <span className="text-slate-400">{icon}</span>
-      <span className="sr-only">{label}</span>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{title}</p>
 
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="appearance-none bg-transparent pr-6 text-sm font-medium text-slate-200 outline-none"
-      >
-        {options.map((option) => (
-          <option key={option} value={option} className="bg-slate-900">
-            {option}
-          </option>
-        ))}
-      </select>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            {formatNumber(value)}
+          </p>
 
-      <ChevronDownIcon className="pointer-events-none absolute right-3 h-4 w-4 text-slate-500" />
-    </label>
+          <p className="mt-2 text-[11px] text-slate-400">{helper}</p>
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon size={21} />
+        </div>
+      </div>
+    </div>
   );
 }
 
-function FileTypeIcon({
+function FileVisual({
   kind,
-  className,
 }: {
   kind: DocumentUsageRecord["icon"];
-  className?: string;
 }) {
-  const labelMap: Record<DocumentUsageRecord["icon"], string> = {
-    pdf: "P",
-    doc: "D",
-    xls: "X",
-    image: "I",
-    dwg: "C",
-    file: "F",
+  const visual: Record<
+    DocumentUsageRecord["icon"],
+    {
+      icon: ReactNode;
+      className: string;
+    }
+  > = {
+    pdf: {
+      icon: <FileText size={18} />,
+      className: "bg-red-50 text-red-600",
+    },
+    doc: {
+      icon: <FileText size={18} />,
+      className: "bg-blue-50 text-blue-600",
+    },
+    xls: {
+      icon: <FileSpreadsheet size={18} />,
+      className: "bg-emerald-50 text-emerald-600",
+    },
+    image: {
+      icon: <FileImage size={18} />,
+      className: "bg-violet-50 text-violet-600",
+    },
+    archive: {
+      icon: <FileArchive size={18} />,
+      className: "bg-orange-50 text-orange-600",
+    },
+    file: {
+      icon: <FileText size={18} />,
+      className: "bg-slate-100 text-slate-600",
+    },
   };
 
   return (
     <div
-      className={`flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-bold uppercase tracking-[0.18em] ${className}`}
+      className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+        visual[kind].className
+      )}
     >
-      {labelMap[kind]}
+      {visual[kind].icon}
+    </div>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    name?: string;
+    value?: number;
+  }>;
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+      <p className="mb-2 text-xs font-bold text-slate-700">{label}</p>
+
+      <div className="space-y-1.5">
+        {payload.map((item) => (
+          <div
+            key={item.name}
+            className="flex min-w-[120px] items-center justify-between gap-4 text-xs"
+          >
+            <span className="text-slate-500">
+              {item.name === "views" ? "Views" : "Downloads"}
+            </span>
+
+            <span className="font-bold text-slate-900">
+              {item.value ?? 0}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  const pages = useMemo(() => {
+    const start = Math.max(1, currentPage - 1);
+    const end = Math.min(totalPages, currentPage + 1);
+
+    const values: number[] = [];
+
+    for (let page = start; page <= end; page += 1) {
+      values.push(page);
+    }
+
+    return values;
+  }, [currentPage, totalPages]);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={currentPage <= 1}
+        onClick={() => onChange(currentPage - 1)}
+        aria-label="Previous page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronLeft size={15} />
+      </button>
+
+      {currentPage > 2 && (
+        <>
+          <button
+            type="button"
+            onClick={() => onChange(1)}
+            className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+          >
+            1
+          </button>
+
+          {currentPage > 3 && (
+            <span className="px-1 text-xs text-slate-400">…</span>
+          )}
+        </>
+      )}
+
+      {pages.map((page) => (
+        <button
+          key={page}
+          type="button"
+          onClick={() => onChange(page)}
+          aria-current={page === currentPage ? "page" : undefined}
+          className={cn(
+            "flex h-8 min-w-8 items-center justify-center rounded-lg border px-2",
+            "text-xs font-semibold transition",
+            page === currentPage
+              ? "border-blue-600 bg-blue-600 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+          )}
+        >
+          {page}
+        </button>
+      ))}
+
+      {currentPage < totalPages - 1 && (
+        <>
+          {currentPage < totalPages - 2 && (
+            <span className="px-1 text-xs text-slate-400">…</span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onChange(totalPages)}
+            className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+          >
+            {totalPages}
+          </button>
+        </>
+      )}
+
+      <button
+        type="button"
+        disabled={currentPage >= totalPages}
+        onClick={() => onChange(currentPage + 1)}
+        aria-label="Next page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronRight size={15} />
+      </button>
     </div>
   );
 }
 
 export default function Docreport() {
-  const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState("Last 30 Days");
-  const [project, setProject] = useState("All Projects");
+  const [search, setSearch] = useState<string>("");
+  const [dateRange, setDateRange] = useState<string>("30");
+  const [project, setProject] = useState<string>("All Projects");
+
   const [documents, setDocuments] = useState<DmsDocument[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [user, setUser] = useState<UserSummary | null>(null);
-  const [accessSummary, setAccessSummary] = useState<AccessSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [accessSummary, setAccessSummary] =
+    useState<AccessSummary | null>(null);
+
+  const [loading, setLoading] = useState<boolean>(true);
   const [alert, setAlert] = useState<AlertState | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   const selectedRange =
-    dateOptions.find((item) => item.label === dateRange) || dateOptions[1];
+    dateOptions.find((option) => option.value === dateRange) ||
+    dateOptions[1];
 
   async function loadData(): Promise<void> {
     try {
       setLoading(true);
       setAlert(null);
 
-      const [userData, documentsData, projectsData, accessSummaryData] =
-        await Promise.all([
-          safeRequest(() => getCurrentUser(), null),
-          safeRequest(() => getDocuments({}), []),
-          safeRequest(() => getProjects({}), []),
-          safeRequest(
-            async () =>
-              unwrapData<AccessSummary>(
-                await apiRequest("/document-access/summary", {
-                  method: "GET",
-                }),
-                {}
-              ),
-            null
-          ),
-        ]);
+      const [
+        userData,
+        documentsData,
+        projectsData,
+        accessSummaryData,
+      ] = await Promise.all([
+        safeRequest(() => getCurrentUser(), null),
+        safeRequest(() => getDocuments({}), []),
+        safeRequest(() => getProjects({}), []),
+        safeRequest(
+          async () =>
+            unwrapData<AccessSummary>(
+              await apiRequest("/document-access/summary", {
+                method: "GET",
+              }),
+              {}
+            ),
+          null
+        ),
+      ]);
 
       setUser(userData);
-      setDocuments(documentsData);
-      setProjects(projectsData);
+      setDocuments(
+        Array.isArray(documentsData) ? documentsData : []
+      );
+      setProjects(
+        Array.isArray(projectsData) ? projectsData : []
+      );
       setAccessSummary(accessSummaryData);
       setCurrentPage(1);
     } catch (error) {
@@ -662,7 +878,7 @@ export default function Docreport() {
         message:
           error instanceof Error
             ? error.message
-            : "Failed to load document usage report data.",
+            : "Unable to load the document usage report.",
       });
     } finally {
       setLoading(false);
@@ -681,9 +897,13 @@ export default function Docreport() {
   const projectOptions = useMemo(
     () => [
       "All Projects",
-      ...projects
-        .map((item) => item.name)
-        .filter((name): name is string => Boolean(name)),
+      ...Array.from(
+        new Set(
+          projects
+            .map((item) => item.name)
+            .filter((name): name is string => Boolean(name))
+        )
+      ),
     ],
     [projects]
   );
@@ -715,15 +935,16 @@ export default function Docreport() {
           .toLowerCase()
           .includes(term);
 
-      const matchesSelectedProject = matchesProject(record, project);
       const dateValue =
         record.lastAccessedRaw ||
         record.document.updated_at ||
         record.document.created_at;
 
-      const matchesDate = isWithinRange(dateValue, selectedRange.days);
-
-      return matchesText && matchesSelectedProject && matchesDate;
+      return (
+        matchesText &&
+        matchesProject(record, project) &&
+        isWithinRange(dateValue, selectedRange.days)
+      );
     });
   }, [documentRecords, project, search, selectedRange.days]);
 
@@ -732,65 +953,82 @@ export default function Docreport() {
     [filteredDocuments, selectedRange.days]
   );
 
-  const maxMetric = Math.max(
-    1,
-    ...usageSeries.flatMap((item) => [item.views, item.downloads])
-  );
-
-  const viewsPath = buildLinePath(
-    usageSeries.map((item) => item.views),
-    maxMetric
-  );
-
-  const downloadsPath = buildLinePath(
-    usageSeries.map((item) => item.downloads),
-    maxMetric
-  );
-
   const totalViewsFromDocuments = filteredDocuments.reduce(
-    (sum, item) => sum + item.views,
+    (total, record) => total + record.views,
     0
   );
+
   const totalDownloadsFromDocuments = filteredDocuments.reduce(
-    (sum, item) => sum + item.downloads,
+    (total, record) => total + record.downloads,
     0
   );
 
-  const totalViews =
-    accessSummary?.total_views && project === "All Projects" && !search
-      ? Number(accessSummary.total_views)
-      : totalViewsFromDocuments;
+  const canUseGlobalSummary =
+    project === "All Projects" &&
+    search.trim() === "" &&
+    totalViewsFromDocuments === 0 &&
+    totalDownloadsFromDocuments === 0;
 
-  const totalDownloads =
-    accessSummary?.total_downloads && project === "All Projects" && !search
-      ? Number(accessSummary.total_downloads)
-      : totalDownloadsFromDocuments;
+  const totalViews = canUseGlobalSummary
+    ? Number(accessSummary?.total_views || 0)
+    : totalViewsFromDocuments;
+
+  const totalDownloads = canUseGlobalSummary
+    ? Number(accessSummary?.total_downloads || 0)
+    : totalDownloadsFromDocuments;
+
+  const engagementRate =
+    totalViews > 0
+      ? Math.round((totalDownloads / totalViews) * 100)
+      : 0;
 
   const topDocuments = useMemo(
     () =>
       [...filteredDocuments]
-        .sort((first, second) => second.views + second.downloads - (first.views + first.downloads))
+        .sort(
+          (first, second) =>
+            second.views +
+            second.downloads -
+            (first.views + first.downloads)
+        )
         .slice(0, 5),
     [filteredDocuments]
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredDocuments.length / PAGE_SIZE)
+  );
+
+  const safeCurrentPage = Math.min(
+    Math.max(currentPage, 1),
+    totalPages
+  );
+
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+
   const paginatedDocuments = filteredDocuments.slice(
     startIndex,
-    startIndex + pageSize
+    startIndex + PAGE_SIZE
   );
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
 
   function exportReport(): void {
     const payload = {
       generated_at: new Date().toISOString(),
       generated_by: getUserName(user),
-      date_range: dateRange,
+      date_range: selectedRange.label,
       project,
+      search_query: search.trim() || null,
       total_documents: filteredDocuments.length,
       total_views: totalViews,
       total_downloads: totalDownloads,
+      engagement_rate_percent: engagementRate,
       documents: filteredDocuments.map((record) => ({
         id: record.id,
         name: record.name,
@@ -801,7 +1039,7 @@ export default function Docreport() {
         views: record.views,
         downloads: record.downloads,
         last_accessed: record.lastAccessed,
-        status: record.document.status,
+        workflow_status: record.document.status,
         scan_status: record.document.scan_status,
         sandbox_status: record.document.sandbox_status,
         encryption_status: record.document.encryption_status,
@@ -830,325 +1068,374 @@ export default function Docreport() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0c1022] text-slate-100">
-      <div className="flex min-h-screen flex-col xl:flex-row">
-        <AdminSidebar />
+    <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
+      <AdminSidebar />
 
-        <main className="flex-1">
-          <header className="border-b border-white/8 bg-[#11152d]/90 backdrop-blur">
-            <div className="flex flex-col gap-4 px-5 py-4 sm:px-7 lg:flex-row lg:items-center lg:justify-between lg:px-10">
-              <div className="flex items-center gap-3 text-sm font-medium text-slate-400">
-                <span className="text-white">Reports</span>
-                <span className="text-slate-600">|</span>
-                <span className="flex items-center gap-2">
-                  <SidebarIcon type="reports" className="h-4 w-4" />
-                  <span>Document Usage</span>
-                </span>
-              </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header
+          user={user}
+          loading={loading}
+          onRefresh={loadData}
+        />
 
-              <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+        <div className="custom-scrollbar flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
+            <ReportTabs />
+
+            {alert && (
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <span>{alert.message}</span>
+
                 <button
                   type="button"
-                  onClick={loadData}
-                  disabled={loading}
-                  className="inline-flex h-10 items-center gap-2 rounded-full border border-white/8 bg-slate-800/80 px-4 text-sm text-slate-300 transition hover:border-indigo-400/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => setAlert(null)}
+                  aria-label="Close alert"
+                  className="text-lg leading-none text-red-500"
                 >
-                  {loading ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-white" />
-                  ) : (
-                    <MenuIcon className="h-4 w-4" />
-                  )}
-                  Refresh
-                </button>
-
-                <button className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/8 bg-slate-800/80 text-slate-300 transition hover:border-indigo-400/30 hover:text-white">
-                  <BellIcon className="h-4 w-4" />
-                  <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-[#11152d] bg-rose-500" />
-                </button>
-
-                <div className="hidden h-8 w-px bg-white/8 sm:block" />
-
-                <button className="flex items-center gap-3 rounded-full border border-white/8 bg-slate-800/80 py-1.5 pl-1.5 pr-3 text-left transition hover:border-indigo-400/30 hover:bg-slate-800">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 via-orange-100 to-slate-200 text-sm font-semibold text-slate-700">
-                    {getInitials(getUserName(user))}
-                  </div>
-                  <div className="leading-tight">
-                    <div className="text-sm font-medium text-white">
-                      {getUserName(user)}
-                    </div>
-                    <div className="text-xs text-slate-400">{getRoleName(user)}</div>
-                  </div>
-                  <ChevronDownIcon className="h-4 w-4 text-slate-500" />
+                  ×
                 </button>
               </div>
-            </div>
-          </header>
+            )}
 
-          <section className="px-5 py-6 sm:px-7 lg:px-10 lg:py-8">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-white">
-                  Document Usage Report
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm text-slate-400">
-                  Real database analytics on document access, views, downloads,
-                  projects, file types, and last access.
+                <h2 className="text-lg font-bold text-slate-900">
+                  Document Usage Analytics
+                </h2>
+
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Review document views, downloads, projects and recent access
+                  activity from your database.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <SelectPill
-                  icon={<CalendarIcon className="h-4 w-4" />}
-                  label="Date Range"
-                  value={dateRange}
-                  options={dateOptions.map((item) => item.label)}
-                  onChange={(value) => {
-                    setDateRange(value);
-                    setCurrentPage(1);
-                  }}
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <CalendarDays
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
 
-                <SelectPill
-                  icon={<FolderIcon className="h-4 w-4" />}
-                  label="Projects"
-                  value={project}
-                  options={projectOptions}
-                  onChange={(value) => {
-                    setProject(value);
-                    setCurrentPage(1);
-                  }}
-                />
+                  <select
+                    value={dateRange}
+                    onChange={(event) => {
+                      setDateRange(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-10 appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-9 pr-9 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                  >
+                    {dateOptions.map((option) => (
+                      <option
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                </div>
+
+                <div className="relative">
+                  <FolderOpen
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+
+                  <select
+                    value={project}
+                    onChange={(event) => {
+                      setProject(event.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-10 max-w-[220px] appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-9 pr-9 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                  >
+                    {projectOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                </div>
 
                 <button
                   type="button"
                   onClick={exportReport}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-blue-500 px-4 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(93,92,255,0.35)] transition hover:brightness-110"
+                  disabled={loading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <DownloadIcon className="h-4 w-4" />
-                  Export Report
+                  <Download size={16} />
+                  Export data
                 </button>
               </div>
-            </div>
-
-            {alert && (
-              <div
-                className={`mt-6 rounded-xl border px-4 py-3 text-sm ${
-                  alert.type === "error"
-                    ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
-                    : "border-blue-500/20 bg-blue-500/10 text-blue-200"
-                }`}
-              >
-                {alert.message}
-              </div>
-            )}
-
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              <MetricCard
-                title="Total Views"
-                value={totalViews}
-                helper="From access/view fields returned by API"
-              />
-              <MetricCard
-                title="Total Downloads"
-                value={totalDownloads}
-                helper="From download fields returned by API"
-              />
-              <MetricCard
-                title="Matching Documents"
-                value={filteredDocuments.length}
-                helper={`${formatNumber(documents.length)} total documents loaded`}
-              />
-            </div>
+            </section>
 
             {loading ? (
-              <div className="mt-8 rounded-2xl border border-white/8 bg-[#232943] p-12 text-center text-sm text-slate-400">
-                Loading real document usage data from database...
+              <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm shadow-slate-200/40">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <Loader2 size={23} className="animate-spin" />
+                </div>
+
+                <p className="mt-4 text-sm font-semibold text-slate-700">
+                  Loading usage report
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Retrieving document access information...
+                </p>
               </div>
             ) : (
               <>
-                <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1fr)_294px]">
-                  <section className="rounded-2xl border border-white/8 bg-[#232943] p-5 shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
-                    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    title="Total Views"
+                    value={totalViews}
+                    helper="Document open and access count"
+                    icon={Eye}
+                  />
+
+                  <MetricCard
+                    title="Total Downloads"
+                    value={totalDownloads}
+                    helper="Downloaded document count"
+                    icon={Download}
+                  />
+
+                  <MetricCard
+                    title="Matching Documents"
+                    value={filteredDocuments.length}
+                    helper={`${formatNumber(documents.length)} records loaded`}
+                    icon={FileText}
+                  />
+
+                  <MetricCard
+                    title="Download Rate"
+                    value={engagementRate}
+                    helper="Downloads for every 100 views"
+                    icon={TrendingUp}
+                  />
+                </section>
+
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h2 className="text-xl font-semibold text-white">
-                          Total Views vs. Downloads
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-400">
-                          Trend over selected period using available access counters
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Usage Activity
+                        </h3>
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Views and downloads for the selected period
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-4 text-sm text-slate-300">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
-                          <span>Views</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                          <span>Downloads</span>
-                        </div>
+                      <div className="flex items-center gap-4 text-[11px] font-medium text-slate-500">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-blue-600" />
+                          Views
+                        </span>
+
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          Downloads
+                        </span>
                       </div>
                     </div>
 
-                    <div className="overflow-hidden rounded-xl border border-white/5 bg-gradient-to-b from-white/[0.02] to-transparent p-2">
-                      <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-[260px] w-full">
-                        {[0.2, 0.45, 0.7, 0.95].map((ratio) => {
-                          const y =
-                            chartHeight -
-                            chartPadding -
-                            ratio * (chartHeight - chartPadding * 2);
-
-                          return (
-                            <line
-                              key={ratio}
-                              x1={chartPadding}
-                              x2={chartWidth - chartPadding}
-                              y1={y}
-                              y2={y}
-                              stroke="rgba(148, 163, 184, 0.08)"
-                              strokeWidth="1"
-                            />
-                          );
-                        })}
-
-                        {usageSeries.map((point, index) => {
-                          const x =
-                            chartPadding +
-                            (index * (chartWidth - chartPadding * 2)) /
-                              Math.max(usageSeries.length - 1, 1);
-
-                          return (
-                            <text
-                              key={point.label}
-                              x={x}
-                              y={chartHeight - 5}
-                              textAnchor={
-                                index === 0
-                                  ? "start"
-                                  : index === usageSeries.length - 1
-                                  ? "end"
-                                  : "middle"
-                              }
-                              fill="rgba(148,163,184,0.75)"
-                              fontSize="11"
+                    <div className="mt-5 h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={usageSeries}
+                          margin={{
+                            top: 10,
+                            right: 8,
+                            left: -22,
+                            bottom: 0,
+                          }}
+                        >
+                          <defs>
+                            <linearGradient
+                              id="usageViewsGradient"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
                             >
-                              {point.label}
-                            </text>
-                          );
-                        })}
-
-                        <path
-                          d={viewsPath}
-                          fill="none"
-                          stroke="#5B63FF"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d={downloadsPath}
-                          fill="none"
-                          stroke="#00D39A"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-
-                        {usageSeries.map((point, index) => {
-                          const x =
-                            chartPadding +
-                            (index * (chartWidth - chartPadding * 2)) /
-                              Math.max(usageSeries.length - 1, 1);
-                          const viewY =
-                            chartHeight -
-                            chartPadding -
-                            (point.views / maxMetric) *
-                              (chartHeight - chartPadding * 2);
-                          const downloadY =
-                            chartHeight -
-                            chartPadding -
-                            (point.downloads / maxMetric) *
-                              (chartHeight - chartPadding * 2);
-
-                          return (
-                            <g key={`${point.label}-${point.views}`}>
-                              <circle cx={x} cy={viewY} r="3.5" fill="#5B63FF" />
-                              <circle
-                                cx={x}
-                                cy={downloadY}
-                                r="3.5"
-                                fill="#00D39A"
+                              <stop
+                                offset="0%"
+                                stopColor="#2563eb"
+                                stopOpacity={0.18}
                               />
-                            </g>
-                          );
-                        })}
-                      </svg>
-                    </div>
-                  </section>
 
-                  <section className="rounded-2xl border border-white/8 bg-[#232943] p-5 shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
+                              <stop
+                                offset="100%"
+                                stopColor="#2563eb"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+
+                            <linearGradient
+                              id="usageDownloadsGradient"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="0%"
+                                stopColor="#10b981"
+                                stopOpacity={0.16}
+                              />
+
+                              <stop
+                                offset="100%"
+                                stopColor="#10b981"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+
+                          <CartesianGrid
+                            vertical={false}
+                            stroke="#e2e8f0"
+                            strokeDasharray="4 4"
+                          />
+
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{
+                              fill: "#94a3b8",
+                              fontSize: 10,
+                            }}
+                            dy={8}
+                          />
+
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            allowDecimals={false}
+                            tick={{
+                              fill: "#94a3b8",
+                              fontSize: 10,
+                            }}
+                          />
+
+                          <Tooltip content={<ChartTooltip />} />
+
+                          <Area
+                            type="monotone"
+                            dataKey="views"
+                            stroke="#2563eb"
+                            strokeWidth={2.5}
+                            fill="url(#usageViewsGradient)"
+                            activeDot={{ r: 4 }}
+                          />
+
+                          <Area
+                            type="monotone"
+                            dataKey="downloads"
+                            stroke="#10b981"
+                            strokeWidth={2.5}
+                            fill="url(#usageDownloadsGradient)"
+                            activeDot={{ r: 4 }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">
-                        Top 5 Accessed Documents
-                      </h2>
-                      <p className="mt-1 text-sm text-slate-400">
-                        Most viewed/downloaded files in current filter
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Most Accessed Documents
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Top records by combined views and downloads
                       </p>
                     </div>
 
-                    <div className="mt-8 space-y-5">
+                    <div className="mt-5 space-y-3">
                       {topDocuments.length > 0 ? (
-                        topDocuments.map((doc) => {
-                          const topScore = Math.max(
-                            1,
-                            ...topDocuments.map((item) => item.views + item.downloads)
-                          );
-                          const score = doc.views + doc.downloads;
-                          const barWidth = `${Math.max(8, (score / topScore) * 100)}%`;
+                        topDocuments.map((record, index) => {
+                          const score =
+                            record.views + record.downloads;
 
                           return (
-                            <div key={doc.id}>
-                              <div className="mb-2 flex items-start justify-between gap-3 text-sm">
-                                <span className="max-w-[78%] truncate text-slate-100">
-                                  {doc.name}
-                                </span>
-                                <span className="text-slate-500">{score}</span>
+                            <div
+                              key={record.id}
+                              className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"
+                            >
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+                                {index + 1}
                               </div>
-                              <div className="h-2 overflow-hidden rounded-full bg-white/6">
-                                <div
-                                  className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
-                                  style={{ width: barWidth }}
-                                />
+
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className="truncate text-xs font-semibold text-slate-700"
+                                  title={record.name}
+                                >
+                                  {record.name}
+                                </p>
+
+                                <p className="mt-1 truncate text-[10px] text-slate-400">
+                                  {record.projectName}
+                                </p>
                               </div>
+
+                              <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                                {score}
+                              </span>
                             </div>
                           );
                         })
                       ) : (
-                        <p className="text-sm text-slate-500">
-                          No accessed documents found for this filter.
-                        </p>
+                        <div className="flex min-h-[230px] flex-col items-center justify-center text-center">
+                          <Eye size={26} className="text-slate-300" />
+
+                          <p className="mt-3 text-sm font-semibold text-slate-600">
+                            No access activity
+                          </p>
+
+                          <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
+                            Viewed or downloaded documents will appear here.
+                          </p>
+                        </div>
                       )}
                     </div>
-                  </section>
-                </div>
+                  </div>
+                </section>
 
-                <section className="mt-6 rounded-2xl border border-white/8 bg-[#232943] shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
-                  <div className="flex flex-col gap-4 border-b border-white/8 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+                  <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">
+                      <h3 className="text-sm font-bold text-slate-900">
                         Document Usage Details
-                      </h2>
-                      <p className="mt-1 text-sm text-slate-400">
-                        {formatNumber(filteredDocuments.length)} matching files •{" "}
-                        {formatNumber(totalViews)} views •{" "}
-                        {formatNumber(totalDownloads)} downloads
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        {formatNumber(filteredDocuments.length)} matching
+                        documents in this report
                       </p>
                     </div>
 
-                    <label className="relative block w-full max-w-sm">
-                      <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
-                        <SearchIcon className="h-4 w-4" />
-                      </span>
+                    <div className="relative w-full lg:max-w-sm">
+                      <Search
+                        size={16}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+
                       <input
                         value={search}
                         onChange={(event) => {
@@ -1156,66 +1443,108 @@ export default function Docreport() {
                           setCurrentPage(1);
                         }}
                         placeholder="Search documents..."
-                        className="h-11 w-full rounded-xl border border-white/8 bg-[#1c213d] pl-10 pr-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-indigo-400/35"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
                       />
-                    </label>
+                    </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse text-left">
+                  <div className="hidden overflow-x-auto lg:block">
+                    <table className="w-full min-w-[960px] text-left">
                       <thead>
-                        <tr className="border-b border-white/8 text-[11px] uppercase tracking-[0.08em] text-slate-500">
-                          <th className="px-7 py-4 font-medium">Document Name</th>
-                          <th className="px-5 py-4 font-medium">Type</th>
-                          <th className="px-5 py-4 font-medium">Project</th>
-                          <th className="px-5 py-4 font-medium">Views</th>
-                          <th className="px-5 py-4 font-medium">Downloads</th>
-                          <th className="px-7 py-4 text-right font-medium">
+                        <tr className="border-b border-slate-100 bg-slate-50/70">
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Document
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Project
+                          </th>
+
+                          <th className="px-5 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Views
+                          </th>
+
+                          <th className="px-5 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Downloads
+                          </th>
+
+                          <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             Last Accessed
+                          </th>
+
+                          <th className="px-5 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Action
                           </th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {paginatedDocuments.length > 0 ? (
-                          paginatedDocuments.map((doc) => (
+                          paginatedDocuments.map((record) => (
                             <tr
-                              key={doc.id}
-                              className="border-b border-white/8 text-sm text-slate-200 transition hover:bg-white/[0.02]"
+                              key={record.id}
+                              className="border-b border-slate-100 transition last:border-0 hover:bg-slate-50/70"
                             >
-                              <td className="px-7 py-4">
-                                <div className="flex items-center gap-4">
-                                  <FileTypeIcon
-                                    kind={doc.icon}
-                                    className={doc.accent}
-                                  />
-                                  <div>
-                                    <div className="font-medium text-white">
-                                      {doc.name}
-                                    </div>
-                                    <div className="mt-1 text-xs uppercase tracking-[0.08em] text-slate-500">
-                                      {doc.format} · {doc.size}
-                                    </div>
+                              <td className="px-5 py-4">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <FileVisual kind={record.icon} />
+
+                                  <div className="min-w-0">
+                                    <p
+                                      className="max-w-[320px] truncate text-sm font-semibold text-slate-800"
+                                      title={record.name}
+                                    >
+                                      {record.name}
+                                    </p>
+
+                                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                      {record.format} · {record.size} ·{" "}
+                                      {record.type}
+                                    </p>
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-5 py-4 text-slate-400">
-                                {doc.type}
-                              </td>
+
                               <td className="px-5 py-4">
-                                <span
-                                  className={`inline-flex rounded-md px-2.5 py-1 text-xs font-medium ${doc.projectClass}`}
-                                >
-                                  {doc.projectName}
+                                <span className="inline-flex max-w-[190px] items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                                  <FolderOpen size={12} />
+                                  <span className="truncate">
+                                    {record.projectName}
+                                  </span>
                                 </span>
                               </td>
-                              <td className="px-5 py-4 text-white">
-                                {formatNumber(doc.views)}
+
+                              <td className="px-5 py-4 text-center text-sm font-bold text-slate-800">
+                                {formatNumber(record.views)}
                               </td>
-                              <td className="px-5 py-4 text-white">
-                                {formatNumber(doc.downloads)}
+
+                              <td className="px-5 py-4 text-center text-sm font-bold text-slate-800">
+                                {formatNumber(record.downloads)}
                               </td>
-                              <td className="px-7 py-4 text-right text-slate-400">
-                                {doc.lastAccessed}
+
+                              <td className="px-5 py-4">
+                                <p className="text-xs font-medium text-slate-600">
+                                  {record.lastAccessed}
+                                </p>
+
+                                <p className="mt-1 text-[10px] text-slate-400">
+                                  {formatRelativeTime(
+                                    record.lastAccessedRaw
+                                  )}
+                                </p>
+                              </td>
+
+                              <td className="px-5 py-4 text-right">
+                                <Link
+                                  to={`/alldocuments?document=${record.id}`}
+                                  state={{
+                                    selectedDocumentId: record.id,
+                                  }}
+                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                                >
+                                  <Eye size={14} />
+                                  Open
+                                </Link>
                               </td>
                             </tr>
                           ))
@@ -1223,9 +1552,20 @@ export default function Docreport() {
                           <tr>
                             <td
                               colSpan={6}
-                              className="px-7 py-10 text-center text-sm text-slate-500"
+                              className="px-5 py-14 text-center"
                             >
-                              No document usage record matched your filters.
+                              <Search
+                                size={28}
+                                className="mx-auto text-slate-300"
+                              />
+
+                              <p className="mt-3 text-sm font-semibold text-slate-600">
+                                No usage record found
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-400">
+                                Change the project, date range or search text.
+                              </p>
                             </td>
                           </tr>
                         )}
@@ -1233,82 +1573,116 @@ export default function Docreport() {
                     </table>
                   </div>
 
-                  <div className="flex flex-col gap-4 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                    <p>
-                      Showing{" "}
-                      {filteredDocuments.length === 0 ? 0 : startIndex + 1} to{" "}
-                      {Math.min(startIndex + paginatedDocuments.length, filteredDocuments.length)}{" "}
-                      of {filteredDocuments.length} entries
-                    </p>
-                    <div className="flex items-center gap-2 self-end">
-                      <button
-                        type="button"
-                        disabled={safeCurrentPage <= 1}
-                        onClick={() => setCurrentPage(safeCurrentPage - 1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/8 bg-[#1c213d] text-slate-500 transition hover:border-indigo-400/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <ChevronLeftIcon className="h-4 w-4" />
-                      </button>
+                  <div className="grid grid-cols-1 gap-4 bg-slate-50/60 p-4 sm:grid-cols-2 lg:hidden">
+                    {paginatedDocuments.length > 0 ? (
+                      paginatedDocuments.map((record) => (
+                        <article
+                          key={record.id}
+                          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex items-start gap-3">
+                            <FileVisual kind={record.icon} />
 
-                      {Array.from({ length: totalPages })
-                        .slice(0, 5)
-                        .map((_, index) => {
-                          const page = index + 1;
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-slate-800">
+                                {record.name}
+                              </p>
 
-                          return (
-                            <button
-                              key={page}
-                              type="button"
-                              onClick={() => setCurrentPage(page)}
-                              className={`flex h-9 min-w-9 items-center justify-center rounded-lg border px-3 transition ${
-                                page === safeCurrentPage
-                                  ? "border-indigo-400/20 bg-indigo-500 text-white shadow-[0_10px_24px_rgba(99,102,241,0.35)]"
-                                  : "border-white/8 bg-[#1c213d] text-slate-500 hover:border-indigo-400/30 hover:text-white"
-                              }`}
-                            >
-                              {page}
-                            </button>
-                          );
-                        })}
+                              <p className="mt-1 truncate text-xs text-slate-400">
+                                {record.projectName}
+                              </p>
+                            </div>
+                          </div>
 
-                      <button
-                        type="button"
-                        disabled={safeCurrentPage >= totalPages}
-                        onClick={() => setCurrentPage(safeCurrentPage + 1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/8 bg-[#1c213d] text-slate-500 transition hover:border-indigo-400/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <ChevronRightIcon className="h-4 w-4" />
-                      </button>
-                    </div>
+                          <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center">
+                            <div>
+                              <p className="text-[10px] text-slate-400">
+                                Views
+                              </p>
+
+                              <p className="mt-1 text-sm font-bold text-slate-800">
+                                {formatNumber(record.views)}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] text-slate-400">
+                                Downloads
+                              </p>
+
+                              <p className="mt-1 text-sm font-bold text-slate-800">
+                                {formatNumber(record.downloads)}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] text-slate-400">
+                                Format
+                              </p>
+
+                              <p className="mt-1 text-sm font-bold text-slate-800">
+                                {record.format}
+                              </p>
+                            </div>
+                          </div>
+
+                          <Link
+                            to={`/alldocuments?document=${record.id}`}
+                            state={{
+                              selectedDocumentId: record.id,
+                            }}
+                            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white transition hover:bg-blue-700"
+                          >
+                            <Eye size={15} />
+                            Open document
+                          </Link>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+                        <Search
+                          size={26}
+                          className="mx-auto text-slate-300"
+                        />
+
+                        <p className="mt-3 text-sm font-semibold text-slate-600">
+                          No usage record found
+                        </p>
+                      </div>
+                    )}
                   </div>
+
+                  {filteredDocuments.length > 0 && (
+                    <div className="flex flex-col gap-4 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-slate-500">
+                        Showing{" "}
+                        <span className="font-semibold text-slate-700">
+                          {startIndex + 1}–
+                          {Math.min(
+                            startIndex + paginatedDocuments.length,
+                            filteredDocuments.length
+                          )}
+                        </span>{" "}
+                        of{" "}
+                        <span className="font-semibold text-slate-700">
+                          {filteredDocuments.length}
+                        </span>{" "}
+                        documents
+                      </p>
+
+                      <Pagination
+                        currentPage={safeCurrentPage}
+                        totalPages={totalPages}
+                        onChange={setCurrentPage}
+                      />
+                    </div>
+                  )}
                 </section>
               </>
             )}
-          </section>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  helper,
-}: {
-  title: string;
-  value: number;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/8 bg-[#232943] p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        {title}
-      </p>
-      <p className="mt-2 text-2xl font-semibold text-white">
-        {formatNumber(value)}
-      </p>
-      <p className="mt-1 text-xs text-slate-500">{helper}</p>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

@@ -4,12 +4,10 @@ import {
   Activity,
   AlertCircle,
   Archive as ArchiveIcon,
-  Bell,
   BrainCircuit,
   Bug,
   CheckCircle2,
   Clock3,
-  Database,
   Download,
   Eye,
   FileArchive,
@@ -30,7 +28,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Star,
-  UploadCloud,
   UserCircle2,
   Workflow,
   X,
@@ -196,18 +193,6 @@ function formatDate(date?: string | null): string {
   });
 }
 
-function getInitials(name?: string | null): string {
-  if (!name) return "DU";
-
-  const names = name.trim().split(" ").filter(Boolean);
-
-  if (names.length === 1) {
-    return names[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
-}
-
 function getReadableStatus(status?: string | null): string {
   if (!status) return "Unknown";
 
@@ -218,7 +203,9 @@ function getReadableStatus(status?: string | null): string {
 
 function getTags(document: DmsDocument): string[] {
   if (Array.isArray(document.tags)) {
-    return document.tags.filter((tag): tag is string => typeof tag === "string");
+    return document.tags.filter(
+      (tag): tag is string => typeof tag === "string",
+    );
   }
 
   if (typeof document.tags === "string") {
@@ -279,7 +266,7 @@ function getStatusClass(status?: string | null): string {
     case "encrypted":
     case "analyzed":
     case "passed":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "pending_scan":
     case "uploaded":
     case "scanning":
@@ -290,20 +277,20 @@ function getStatusClass(status?: string | null): string {
     case "not_extracted":
     case "not_encrypted":
     case "not_analyzed":
-      return "border-yellow-500/20 bg-yellow-500/10 text-yellow-300";
+      return "border-amber-200 bg-amber-50 text-amber-700";
     case "quarantined":
     case "suspicious":
-      return "border-orange-500/20 bg-orange-500/10 text-orange-300";
+      return "border-orange-200 bg-orange-50 text-orange-700";
     case "infected":
     case "rejected":
     case "failed":
     case "blocked":
     case "unsafe":
-      return "border-red-500/20 bg-red-500/10 text-red-300";
+      return "border-red-200 bg-red-50 text-red-700";
     case "archived":
-      return "border-gray-500/20 bg-gray-500/10 text-gray-300";
+      return "border-slate-200 bg-slate-100 text-slate-600";
     default:
-      return "border-slate-500/20 bg-slate-500/10 text-slate-300";
+      return "border-slate-200 bg-slate-50 text-slate-600";
   }
 }
 
@@ -316,8 +303,8 @@ function getScanUiState(document: DmsDocument): ScanUiState {
       label: "Scanned Clean",
       helper: "This document has passed antivirus scan.",
       buttonLabel: "Re-scan",
-      badgeClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-      iconClass: "text-emerald-300",
+      badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      iconClass: "text-emerald-600",
     };
   }
 
@@ -326,8 +313,8 @@ function getScanUiState(document: DmsDocument): ScanUiState {
       label: "Scanning",
       helper: "Antivirus scan is currently running.",
       buttonLabel: "Scanning...",
-      badgeClass: "border-blue-500/20 bg-blue-500/10 text-blue-300",
-      iconClass: "text-blue-300",
+      badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
+      iconClass: "text-blue-600",
     };
   }
 
@@ -336,8 +323,8 @@ function getScanUiState(document: DmsDocument): ScanUiState {
       label: "Not Scanned",
       helper: "This document is waiting for mandatory antivirus scan.",
       buttonLabel: "Scan Now",
-      badgeClass: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
-      iconClass: "text-yellow-300",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+      iconClass: "text-amber-600",
     };
   }
 
@@ -346,8 +333,8 @@ function getScanUiState(document: DmsDocument): ScanUiState {
       label: "Suspicious",
       helper: "This document needs security review or sandbox testing.",
       buttonLabel: "Re-scan",
-      badgeClass: "border-orange-500/20 bg-orange-500/10 text-orange-300",
-      iconClass: "text-orange-300",
+      badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
+      iconClass: "text-orange-600",
     };
   }
 
@@ -356,18 +343,19 @@ function getScanUiState(document: DmsDocument): ScanUiState {
       label: "Infected",
       helper: "This document is blocked because malware was detected.",
       buttonLabel: "Re-scan",
-      badgeClass: "border-red-500/20 bg-red-500/10 text-red-300",
-      iconClass: "text-red-300",
+      badgeClass: "border-red-200 bg-red-50 text-red-700",
+      iconClass: "text-red-600",
     };
   }
 
   if (scanStatus === "failed") {
     return {
       label: "Scan Failed",
-      helper: "The previous scan failed. Run re-scan after fixing scanner issue.",
+      helper:
+        "The previous scan failed. Run re-scan after fixing scanner issue.",
       buttonLabel: "Re-scan",
-      badgeClass: "border-red-500/20 bg-red-500/10 text-red-300",
-      iconClass: "text-red-300",
+      badgeClass: "border-red-200 bg-red-50 text-red-700",
+      iconClass: "text-red-600",
     };
   }
 
@@ -375,11 +363,10 @@ function getScanUiState(document: DmsDocument): ScanUiState {
     label: "Unknown",
     helper: "Scan status is unknown. You can run scan again.",
     buttonLabel: "Scan Now",
-    badgeClass: "border-slate-500/20 bg-slate-500/10 text-slate-300",
-    iconClass: "text-slate-300",
+    badgeClass: "border-slate-200 bg-slate-50 text-slate-600",
+    iconClass: "text-slate-600",
   };
 }
-
 
 function getAccessUiState(document: DmsDocument): AccessUiState {
   const status = toLower(document.status);
@@ -389,18 +376,22 @@ function getAccessUiState(document: DmsDocument): AccessUiState {
   if (["infected", "rejected", "blocked"].includes(status)) {
     return {
       label: "Access Blocked",
-      helper: "This document cannot be opened because it is blocked or rejected.",
-      badgeClass: "border-red-500/20 bg-red-500/10 text-red-300",
-      iconClass: "text-red-300",
+      helper:
+        "This document cannot be opened because it is blocked or rejected.",
+      badgeClass: "border-red-200 bg-red-50 text-red-700",
+      iconClass: "text-red-600",
     };
   }
 
-  if (["quarantined", "uploaded", "pending_scan", "scanning"].includes(status)) {
+  if (
+    ["quarantined", "uploaded", "pending_scan", "scanning"].includes(status)
+  ) {
     return {
       label: "Not Ready",
-      helper: "The document is not ready for opening until security checks finish.",
-      badgeClass: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
-      iconClass: "text-yellow-300",
+      helper:
+        "The document is not ready for opening until security checks finish.",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+      iconClass: "text-amber-600",
     };
   }
 
@@ -408,8 +399,8 @@ function getAccessUiState(document: DmsDocument): AccessUiState {
     return {
       label: "Scan Required",
       helper: "The document must pass antivirus scan before view or download.",
-      badgeClass: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
-      iconClass: "text-yellow-300",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+      iconClass: "text-amber-600",
     };
   }
 
@@ -417,8 +408,8 @@ function getAccessUiState(document: DmsDocument): AccessUiState {
     return {
       label: "Sandbox Blocked",
       helper: "Sandbox result blocks access to this document.",
-      badgeClass: "border-red-500/20 bg-red-500/10 text-red-300",
-      iconClass: "text-red-300",
+      badgeClass: "border-red-200 bg-red-50 text-red-700",
+      iconClass: "text-red-600",
     };
   }
 
@@ -426,16 +417,17 @@ function getAccessUiState(document: DmsDocument): AccessUiState {
     return {
       label: "Sandbox Pending",
       helper: "The document must pass sandbox inspection before access.",
-      badgeClass: "border-orange-500/20 bg-orange-500/10 text-orange-300",
-      iconClass: "text-orange-300",
+      badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
+      iconClass: "text-orange-600",
     };
   }
 
   return {
     label: "Access Ready",
-    helper: "This document passed access safety checks locally. Server permission is still checked before opening.",
-    badgeClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    iconClass: "text-emerald-300",
+    helper:
+      "This document passed access safety checks locally. Server permission is still checked before opening.",
+    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    iconClass: "text-emerald-600",
   };
 }
 
@@ -456,9 +448,14 @@ function isPendingDocument(document: DmsDocument): boolean {
   const scanStatus = toLower(document.scan_status);
 
   return (
-    ["uploaded", "pending_scan", "scanning", "quarantined", "suspicious"].includes(
-      status
-    ) || ["pending", "scanning", "suspicious"].includes(scanStatus)
+    [
+      "uploaded",
+      "pending_scan",
+      "scanning",
+      "quarantined",
+      "suspicious",
+    ].includes(status) ||
+    ["pending", "scanning", "suspicious"].includes(scanStatus)
   );
 }
 
@@ -548,11 +545,12 @@ export default function Alldocuments() {
   const [documents, setDocuments] = useState<DmsDocument[]>([]);
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DmsDocument | null>(
-    null
+    null,
   );
   const [selectedAccessStatus, setSelectedAccessStatus] =
     useState<DocumentAccessStatus | null>(null);
-  const [accessStatusLoading, setAccessStatusLoading] = useState<boolean>(false);
+  const [accessStatusLoading, setAccessStatusLoading] =
+    useState<boolean>(false);
   const [encryptionSummary, setEncryptionSummary] =
     useState<EncryptionSummary | null>(null);
   const [encryptionSummaryLoading, setEncryptionSummaryLoading] =
@@ -564,15 +562,14 @@ export default function Alldocuments() {
     useState<boolean>(false);
 
   const [sandboxSummary, setSandboxSummary] = useState<SandboxSummary | null>(
-    null
+    null,
   );
   const [sandboxSummaryLoading, setSandboxSummaryLoading] =
     useState<boolean>(false);
   const [selectedSandboxLogs, setSelectedSandboxLogs] = useState<SandboxLog[]>(
-    []
+    [],
   );
-  const [sandboxLogsLoading, setSandboxLogsLoading] =
-    useState<boolean>(false);
+  const [sandboxLogsLoading, setSandboxLogsLoading] = useState<boolean>(false);
 
   const [searchInput, setSearchInput] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -580,7 +577,8 @@ export default function Alldocuments() {
   const [scanStatus, setScanStatus] = useState<string>("");
   const [categoryId, setCategoryId] = useState<string>("");
 
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] =
+    useState<boolean>(false);
   const [categoryForm, setCategoryForm] =
     useState<CategoryFormState>(emptyCategoryForm);
   const [categoryFormError, setCategoryFormError] = useState<string>("");
@@ -593,6 +591,9 @@ export default function Alldocuments() {
   const [actionLoadingKey, setActionLoadingKey] = useState<string>("");
   const [batchLoadingAction, setBatchLoadingAction] =
     useState<BatchAction | null>(null);
+  const [batchPanelOpen, setBatchPanelOpen] = useState<boolean>(false);
+  const [processingPanelOpen, setProcessingPanelOpen] =
+    useState<boolean>(false);
 
   const [aiSummary, setAiSummary] = useState<AiSummary | null>(null);
   const [aiSummaryLoading, setAiSummaryLoading] = useState<boolean>(false);
@@ -613,14 +614,14 @@ export default function Alldocuments() {
   function updateDocumentInState(updatedDocument: DmsDocument): void {
     setDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
-        document.id === updatedDocument.id ? updatedDocument : document
-      )
+        document.id === updatedDocument.id ? updatedDocument : document,
+      ),
     );
 
     setSelectedDocument((currentDocument) =>
       currentDocument?.id === updatedDocument.id
         ? updatedDocument
-        : currentDocument
+        : currentDocument,
     );
   }
 
@@ -634,13 +635,11 @@ export default function Alldocuments() {
       setDocuments(data);
 
       setSelectedDocument((current) => {
-        if (!data.length) return null;
-
-        if (!current) return data[0];
+        if (!data.length || !current) return null;
 
         const stillExists = data.find((document) => document.id === current.id);
 
-        return stillExists || data[0];
+        return stillExists || null;
       });
     } catch (error) {
       const apiError = error as ApiError;
@@ -651,7 +650,7 @@ export default function Alldocuments() {
         setErrorMessage("You do not have permission to view these documents.");
       } else {
         setErrorMessage(
-          apiError.message || "Failed to load documents. Please try again."
+          apiError.message || "Failed to load documents. Please try again.",
         );
       }
     } finally {
@@ -689,7 +688,7 @@ export default function Alldocuments() {
 
   function handleCategoryFormChange(
     field: keyof CategoryFormState,
-    value: string
+    value: string,
   ): void {
     setCategoryForm((currentForm) => ({
       ...currentForm,
@@ -698,7 +697,7 @@ export default function Alldocuments() {
   }
 
   async function handleCreateCategory(
-    event: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
 
@@ -738,7 +737,9 @@ export default function Alldocuments() {
     }
   }
 
-  async function loadSelectedAccessStatus(document: DmsDocument): Promise<DocumentAccessStatus | null> {
+  async function loadSelectedAccessStatus(
+    document: DmsDocument,
+  ): Promise<DocumentAccessStatus | null> {
     try {
       setAccessStatusLoading(true);
 
@@ -760,7 +761,6 @@ export default function Alldocuments() {
       setAccessStatusLoading(false);
     }
   }
-
 
   async function loadSandboxSummary(): Promise<void> {
     try {
@@ -806,7 +806,9 @@ export default function Alldocuments() {
     }
   }
 
-  async function loadSelectedEncryptionLogs(document: DmsDocument): Promise<void> {
+  async function loadSelectedEncryptionLogs(
+    document: DmsDocument,
+  ): Promise<void> {
     try {
       setEncryptionLogsLoading(true);
 
@@ -853,7 +855,7 @@ export default function Alldocuments() {
 
   async function handleApplyAiSuggestions(
     document: DmsDocument,
-    payload: AiApplySuggestionsPayload
+    payload: AiApplySuggestionsPayload,
   ): Promise<void> {
     try {
       setAiApplyLoading(true);
@@ -882,7 +884,7 @@ export default function Alldocuments() {
 
   async function runDocumentAction(
     document: DmsDocument,
-    action: DocumentAction
+    action: DocumentAction,
   ): Promise<void> {
     const actionKey = makeActionKey(document.id, action);
 
@@ -950,7 +952,10 @@ export default function Alldocuments() {
 
         setSelectedAccessStatus(response);
 
-        if (!response.access?.can_download || !response.access?.is_safe_to_open) {
+        if (
+          !response.access?.can_download ||
+          !response.access?.is_safe_to_open
+        ) {
           setActionMessage({
             type: "info",
             message:
@@ -963,7 +968,7 @@ export default function Alldocuments() {
 
         await saveDocumentToDevice(
           document.id,
-          document.original_file_name || document.title || "document"
+          document.original_file_name || document.title || "document",
         );
 
         setActionMessage({
@@ -1030,7 +1035,7 @@ export default function Alldocuments() {
               ? "success"
               : "info",
           message: `Sandbox test completed. New status: ${getReadableStatus(
-            response.document.sandbox_status
+            response.document.sandbox_status,
           )}.`,
         });
 
@@ -1044,7 +1049,8 @@ export default function Alldocuments() {
         if (!canRejectUnsafeSandbox(document)) {
           setActionMessage({
             type: "info",
-            message: "Only unsafe sandbox documents can be rejected from sandbox review.",
+            message:
+              "Only unsafe sandbox documents can be rejected from sandbox review.",
           });
 
           return;
@@ -1056,7 +1062,8 @@ export default function Alldocuments() {
 
         setActionMessage({
           type: "success",
-          message: "Unsafe document rejected successfully after sandbox review.",
+          message:
+            "Unsafe document rejected successfully after sandbox review.",
         });
 
         await loadDocuments();
@@ -1140,7 +1147,8 @@ export default function Alldocuments() {
         if (!canVerifyEncryption(document)) {
           setActionMessage({
             type: "info",
-            message: "This document is not encrypted yet. Encrypt it before verification.",
+            message:
+              "This document is not encrypted yet. Encrypt it before verification.",
           });
 
           return;
@@ -1173,7 +1181,9 @@ export default function Alldocuments() {
             return;
           }
 
-          const extractionResponse = await extractDocumentPlaintext(documentForAi.id);
+          const extractionResponse = await extractDocumentPlaintext(
+            documentForAi.id,
+          );
           documentForAi = extractionResponse.document;
           extractedFirst = true;
 
@@ -1334,7 +1344,6 @@ export default function Alldocuments() {
     selectedDocument?.encryption_status,
   ]);
 
-
   useEffect(() => {
     if (!selectedDocument) {
       setSelectedSandboxLogs([]);
@@ -1376,290 +1385,246 @@ export default function Alldocuments() {
 
   const encryptedDocuments = documents.filter((document) =>
     ["encrypted", "done", "completed", "yes"].includes(
-      toLower(document.encryption_status)
-    )
+      toLower(document.encryption_status),
+    ),
   ).length;
 
   const plaintextReadyDocuments = documents.filter((document) =>
     ["ready", "done", "completed", "indexed", "extracted"].includes(
-      toLower(document.plaintext_status)
-    )
+      toLower(document.plaintext_status),
+    ),
   ).length;
 
   return (
-    <div className="flex h-screen bg-[#07111F] font-sans text-slate-300">
+    <div className="flex h-screen overflow-hidden bg-[#f4f6fa] font-sans text-slate-800">
       <AdminSidebar />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="border-b border-slate-800/80 bg-[#07111F]/95 px-4 py-4 backdrop-blur-xl lg:px-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span>Home</span>
-                <span>{">"}</span>
-                <span>Secure DMS</span>
-                <span>{">"}</span>
-                <span className="text-slate-200">All Documents</span>
-              </div>
-
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-xl font-bold text-white lg:text-2xl">
-                  MIGECO Secure Document Management System
-                </h1>
-
-                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
-                  <ShieldCheck size={14} />
-                  Project first, then secure upload
-                </span>
-              </div>
-
-              <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-400">
-                Documents are controlled by project. Create or select a project
-                first, then upload project documents through the project
-                workspace.
-              </p>
+        <header className="flex h-[68px] shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 lg:px-7">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+              <span>Documents</span>
+              <span>/</span>
+              <span className="text-blue-600">All Documents</span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={loadDocuments}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
-              >
-                <RefreshCcw size={16} />
-                Refresh
-              </button>
+            <h1 className="mt-1 truncate text-lg font-bold text-slate-900 lg:text-xl">
+              Secure Document Library
+            </h1>
+          </div>
 
-              <button
-                type="button"
-                className="relative rounded-xl border border-slate-700 bg-slate-900/70 p-2.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                <Bell size={18} />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-400" />
-              </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={loadDocuments}
+              disabled={loading}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <RefreshCcw size={15} />
+              )}
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
 
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2">
-                <div className="text-right">
-                  <div className="text-sm font-medium text-white">DMS User</div>
-                  <div className="text-xs text-slate-500">
-                    Secure Document Control
-                  </div>
-                </div>
-
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-blue-500/30 bg-blue-700/40 text-xs font-semibold text-white">
-                  DU
-                </div>
-              </div>
-            </div>
+            <Link
+              to="/Projects"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700"
+            >
+              <FolderOpen size={15} />
+              <span className="hidden sm:inline">Projects</span>
+            </Link>
           </div>
         </header>
 
-        <section className="flex-1 overflow-y-auto bg-[#07111F] p-4 lg:p-6">
-          <DocumentsPageTabs />
+        <section className="flex min-h-0 flex-1 overflow-hidden p-3 lg:p-4">
+          <div className="mx-auto flex min-h-0 w-full max-w-[1650px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+            <div className="shrink-0 border-b border-slate-100 bg-white px-3 py-3 lg:px-4">
+              <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                <DocumentsPageTabs />
 
-          <ProposalHeroPanel />
-
-          <ProjectFirstNotice />
-
-          <SandboxSummaryPanel
-            summary={sandboxSummary}
-            loading={sandboxSummaryLoading}
-          />
-
-          <AiSummaryPanel summary={aiSummary} loading={aiSummaryLoading} />
-
-          <EncryptionSummaryPanel
-            summary={encryptionSummary}
-            loading={encryptionSummaryLoading}
-          />
-
-          {actionMessage && (
-            <AlertBox
-              type={actionMessage.type}
-              message={actionMessage.message}
-              className="mb-5"
-              onClose={() => setActionMessage(null)}
-            />
-          )}
-
-          {errorMessage && (
-            <AlertBox type="error" message={errorMessage} className="mb-5" />
-          )}
-
-          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-            <SummaryCard
-              title="Total Documents"
-              value={String(totalDocuments)}
-              helper="All project records"
-              icon={<Files size={18} />}
-            />
-
-            <SummaryCard
-              title="Scanned Clean"
-              value={String(cleanDocuments)}
-              helper="Green = antivirus passed"
-              icon={<ShieldCheck size={18} />}
-              tone="success"
-            />
-
-            <SummaryCard
-              title="In Pipeline"
-              value={String(pendingDocuments)}
-              helper="Waiting for scan/security"
-              icon={<Clock3 size={18} />}
-              tone="warning"
-            />
-
-            <SummaryCard
-              title="Blocked"
-              value={String(blockedDocuments)}
-              helper="Rejected or infected"
-              icon={<ShieldAlert size={18} />}
-              tone="danger"
-            />
-
-            <SummaryCard
-              title="Encrypted"
-              value={String(encryptedDocuments)}
-              helper="Protected at rest"
-              icon={<LockKeyhole size={18} />}
-            />
-
-            <SummaryCard
-              title="Plaintext Ready"
-              value={String(plaintextReadyDocuments)}
-              helper="Safe search / AI text"
-              icon={<ScanSearch size={18} />}
-            />
-          </div>
-
-          <BatchOperationsPanel
-            batchLoadingAction={batchLoadingAction}
-            onBatchAction={runBatchAction}
-          />
-
-          <div className="mb-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
-              <div className="relative w-full 2xl:max-w-xl">
-                <Search
-                  className="absolute left-4 top-3.5 text-slate-500"
-                  size={18}
-                />
-
-                <input
-                  value={searchInput}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setSearchInput(event.target.value)
-                  }
-                  placeholder="Search title, code, metadata, category, project, tag..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 pl-11 text-sm text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
-                />
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-                <div className="relative">
-                  <Filter
-                    size={15}
-                    className="absolute left-3 top-3.5 text-slate-500"
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:w-auto">
+                  <SummaryCard
+                    title="Total"
+                    value={String(totalDocuments)}
+                    helper="Documents"
+                    icon={<Files size={16} />}
                   />
 
-                  <select
-                    value={status}
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                      setStatus(event.target.value)
+                  <SummaryCard
+                    title="Clean"
+                    value={String(cleanDocuments)}
+                    helper="Scanned"
+                    icon={<ShieldCheck size={16} />}
+                    tone="success"
+                  />
+
+                  <SummaryCard
+                    title="Pipeline"
+                    value={String(pendingDocuments)}
+                    helper="Pending"
+                    icon={<Clock3 size={16} />}
+                    tone="warning"
+                  />
+
+                  <SummaryCard
+                    title="Blocked"
+                    value={String(blockedDocuments)}
+                    helper="Unsafe"
+                    icon={<ShieldAlert size={16} />}
+                    tone="danger"
+                  />
+                </div>
+              </div>
+
+              {(actionMessage || errorMessage) && (
+                <div className="mt-3 space-y-2">
+                  {actionMessage && (
+                    <AlertBox
+                      type={actionMessage.type}
+                      message={actionMessage.message}
+                      onClose={() => setActionMessage(null)}
+                    />
+                  )}
+
+                  {errorMessage && (
+                    <AlertBox type="error" message={errorMessage} />
+                  )}
+                </div>
+              )}
+
+              <div className="mt-3 flex flex-col gap-2 xl:flex-row xl:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={16}
+                  />
+
+                  <input
+                    value={searchInput}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      setSearchInput(event.target.value)
                     }
-                    className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-900 py-3 pl-9 pr-4 text-sm text-slate-200 outline-none focus:border-blue-500 sm:w-48"
+                    placeholder="Search documents, project, category, code or tag..."
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:flex xl:shrink-0">
+                  <div className="relative">
+                    <Filter
+                      size={13}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+                    <select
+                      value={status}
+                      onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                        setStatus(event.target.value)
+                      }
+                      className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-7 text-xs font-medium text-slate-600 outline-none focus:border-blue-400 xl:w-40"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <select
+                    value={scanStatus}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                      setScanStatus(event.target.value)
+                    }
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none focus:border-blue-400 xl:w-40"
                   >
-                    {statusOptions.map((option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                        className="bg-slate-950"
-                      >
+                    {scanStatusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
                         {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={categoryId}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                      setCategoryId(event.target.value)
+                    }
+                    className="col-span-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none focus:border-blue-400 sm:col-span-1 xl:w-48"
+                  >
+                    <option value="">
+                      {categoriesLoading
+                        ? "Loading categories..."
+                        : "All Categories"}
+                    </option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={String(category.id)}>
+                        {category.name}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <select
-                  value={scanStatus}
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    setScanStatus(event.target.value)
-                  }
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-200 outline-none focus:border-blue-500 sm:w-48"
-                >
-                  {scanStatusOptions.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      className="bg-slate-950"
-                    >
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openCategoryModal}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    <Plus size={15} />
+                    Category
+                  </button>
 
-                <select
-                  value={categoryId}
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    setCategoryId(event.target.value)
-                  }
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-200 outline-none focus:border-blue-500 sm:w-56"
-                >
-                  <option value="" className="bg-slate-950">
-                    {categoriesLoading ? "Loading categories..." : "All Categories"}
-                  </option>
+                  <button
+                    type="button"
+                    onClick={() => setBatchPanelOpen(true)}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                  >
+                    <Activity size={15} />
+                    Batch
+                  </button>
 
-                  {categories.map((category) => (
-                    <option
-                      key={category.id}
-                      value={String(category.id)}
-                      className="bg-slate-950"
-                    >
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  onClick={openCategoryModal}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"
-                >
-                  <Plus size={16} />
-                  Create Category
-                </button>
-
-                <Link
-                  to="/Projects"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white"
-                >
-                  <FolderOpen size={16} />
-                  Open Projects
-                </Link>
-
-                <Link
-                  to="/Projects"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
-                >
-                  <Plus size={16} />
-                  Create Project First
-                </Link>
+                  <button
+                    type="button"
+                    onClick={() => setProcessingPanelOpen(true)}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700"
+                  >
+                    <Workflow size={15} />
+                    Processing
+                  </button>
+                </div>
               </div>
             </div>
+
+            <div className="min-h-0 flex-1 bg-slate-50/60 p-3">
+              <DocumentsTable
+                documents={documents}
+                loading={loading}
+                selectedDocument={selectedDocument}
+                onSelectDocument={setSelectedDocument}
+              />
+            </div>
           </div>
+        </section>
+      </main>
 
-          <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_380px]">
-            <DocumentsTable
-              documents={documents}
-              loading={loading}
-              selectedDocument={selectedDocument}
-              actionLoadingKey={actionLoadingKey}
-              onSelectDocument={setSelectedDocument}
-              onDocumentAction={runDocumentAction}
-            />
-
+      {selectedDocument && (
+        <div
+          className="fixed inset-0 z-[70] flex justify-end bg-slate-950/35 backdrop-blur-[1px]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Document details"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedDocument(null);
+            }
+          }}
+        >
+          <div
+            className="h-full w-full max-w-[560px] p-2 sm:p-4"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <DocumentDetailsPanel
               selectedDocument={selectedDocument}
               actionLoadingKey={actionLoadingKey}
@@ -1678,8 +1643,44 @@ export default function Alldocuments() {
               onClose={() => setSelectedDocument(null)}
             />
           </div>
-        </section>
-      </main>
+        </div>
+      )}
+
+      {batchPanelOpen && (
+        <WorkspaceModal
+          title="Batch Operations"
+          description="Run one secure processing action across all eligible documents."
+          icon={<Activity size={19} />}
+          onClose={() => setBatchPanelOpen(false)}
+        >
+          <BatchOperationsPanel
+            batchLoadingAction={batchLoadingAction}
+            onBatchAction={runBatchAction}
+          />
+        </WorkspaceModal>
+      )}
+
+      {processingPanelOpen && (
+        <WorkspaceModal
+          title="Processing Overview"
+          description={`${encryptedDocuments} encrypted · ${plaintextReadyDocuments} text ready · ${aiSummary?.analyzed_documents ?? 0} AI analyzed`}
+          icon={<Workflow size={19} />}
+          onClose={() => setProcessingPanelOpen(false)}
+          wide
+        >
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <SandboxSummaryPanel
+              summary={sandboxSummary}
+              loading={sandboxSummaryLoading}
+            />
+            <EncryptionSummaryPanel
+              summary={encryptionSummary}
+              loading={encryptionSummaryLoading}
+            />
+            <AiSummaryPanel summary={aiSummary} loading={aiSummaryLoading} />
+          </div>
+        </WorkspaceModal>
+      )}
 
       {isCategoryModalOpen && (
         <CreateCategoryModal
@@ -1691,6 +1692,69 @@ export default function Alldocuments() {
           onClose={closeCategoryModal}
         />
       )}
+    </div>
+  );
+}
+
+
+function WorkspaceModal({
+  title,
+  description,
+  icon,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 p-3 backdrop-blur-[1px] sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className={`flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${
+          wide ? "max-w-6xl" : "max-w-3xl"
+        }`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              {icon}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-900">{title}</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {description}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            aria-label={`Close ${title}`}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-5">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1708,17 +1772,21 @@ function AlertBox({
 }) {
   const style =
     type === "success"
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : type === "error"
-      ? "border-red-500/20 bg-red-500/10 text-red-300"
-      : "border-blue-500/20 bg-blue-500/10 text-blue-300";
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-blue-200 bg-blue-50 text-blue-700";
 
   const Icon =
-    type === "success" ? CheckCircle2 : type === "error" ? AlertCircle : ShieldCheck;
+    type === "success"
+      ? CheckCircle2
+      : type === "error"
+        ? AlertCircle
+        : ShieldCheck;
 
   return (
     <div
-      className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm ${style} ${className}`}
+      className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${style} ${className}`}
     >
       <div className="flex items-start gap-3">
         <Icon size={18} className="mt-0.5 shrink-0" />
@@ -1726,142 +1794,14 @@ function AlertBox({
       </div>
 
       {onClose && (
-        <button type="button" onClick={onClose} className="shrink-0 opacity-80">
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 opacity-70 hover:opacity-100"
+        >
           <X size={16} />
         </button>
       )}
-    </div>
-  );
-}
-
-function ProposalHeroPanel() {
-  return (
-    <div className="mb-6 overflow-hidden rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-950/70 via-slate-950 to-emerald-950/40 p-5 shadow-2xl shadow-blue-950/20 lg:p-6">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-200">
-            <Database size={14} />
-            Project-Based Technical and Geological Records Archive
-          </div>
-
-          <h2 className="text-2xl font-bold leading-tight text-white lg:text-3xl">
-            Secure digital archive for MIGECO project documents
-          </h2>
-
-          <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
-            The correct workflow starts with a project. After a project is
-            created, documents are uploaded under that project, placed in
-            quarantine, scanned, sandbox-tested, encrypted, indexed, analyzed
-            with AI, and made available for secure retrieval.
-          </p>
-
-          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <MiniFeature
-              icon={<FolderOpen size={17} />}
-              title="1. Project First"
-              text="Create/select project before adding documents."
-            />
-
-            <MiniFeature
-              icon={<ShieldCheck size={17} />}
-              title="2. Security Pipeline"
-              text="Quarantine, scan, sandbox, hash, encrypt."
-            />
-
-            <MiniFeature
-              icon={<BrainCircuit size={17} />}
-              title="3. AI Intelligence"
-              text="Analyze only extracted safe plaintext."
-            />
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-slate-700/70 bg-slate-950/70 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-white">
-                AI Readiness Rule
-              </p>
-              <p className="text-xs text-slate-500">
-                AI only runs after the document is safe
-              </p>
-            </div>
-
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-300">
-              <BrainCircuit size={22} />
-            </div>
-          </div>
-
-          <div className="space-y-3 text-sm">
-            <RuleLine
-              icon={<ShieldCheck size={16} />}
-              title="Step 1"
-              text="Document must be active and scanned clean."
-              tone="success"
-            />
-
-            <RuleLine
-              icon={<Radar size={16} />}
-              title="Step 2"
-              text="Sandbox status must be safe."
-              tone="success"
-            />
-
-            <RuleLine
-              icon={<ScanSearch size={16} />}
-              title="Step 3"
-              text="Plaintext/OCR must be extracted."
-              tone="warning"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProjectFirstNotice() {
-  return (
-    <div className="mb-6 rounded-3xl border border-amber-500/20 bg-amber-500/10 p-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10 text-amber-300">
-            <FolderOpen size={22} />
-          </div>
-
-          <div>
-            <h2 className="text-base font-semibold text-white">
-              Project must be created before document upload
-            </h2>
-
-            <p className="mt-1 max-w-4xl text-sm leading-6 text-amber-100/80">
-              This page is for viewing and controlling documents. To add a new
-              document, first create or select a project, then upload the file
-              from that project. This keeps every document connected to a site,
-              department, security level, scan history, AI result, and report
-              context.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Link
-            to="/Projects"
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-400/20 bg-slate-950/60 px-4 py-2.5 text-sm font-medium text-amber-100 hover:bg-slate-900"
-          >
-            <FolderOpen size={16} />
-            Open Projects
-          </Link>
-
-          <Link
-            to="/Projects"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400"
-          >
-            <Plus size={16} />
-            Create Project First
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1874,51 +1814,29 @@ function AiSummaryPanel({
   loading: boolean;
 }) {
   return (
-    <div className="mb-6 rounded-3xl border border-purple-500/20 bg-purple-500/10 p-5">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-white">
-            <BrainCircuit size={19} className="text-purple-300" />
-            <h2 className="text-base font-semibold">
-              AI Document Intelligence
-            </h2>
-          </div>
-
-          <p className="mt-1 text-sm text-purple-100/70">
-            AI analyzes only active, clean, sandbox-safe documents after
-            plaintext/OCR extraction is completed.
-          </p>
+    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-violet-800">
+          <BrainCircuit size={17} />
+          <h2 className="text-sm font-semibold">AI Analysis</h2>
         </div>
-
         {loading && (
-          <div className="inline-flex items-center gap-2 text-sm text-purple-200">
-            <Loader2 size={15} className="animate-spin" />
-            Loading AI summary...
-          </div>
+          <Loader2 size={15} className="animate-spin text-violet-500" />
         )}
       </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2">
         <AiSmallCard
-          label="Ready for AI"
+          label="Ready"
           value={summary?.ready_for_ai ?? 0}
           tone="ready"
         />
-
         <AiSmallCard
           label="Analyzed"
           value={summary?.analyzed_documents ?? 0}
           tone="done"
         />
-
         <AiSmallCard
-          label="Pending AI"
-          value={summary?.pending_ai_documents ?? 0}
-          tone="pending"
-        />
-
-        <AiSmallCard
-          label="Failed AI"
+          label="Failed"
           value={summary?.failed_ai_documents ?? 0}
           tone="danger"
         />
@@ -1937,20 +1855,19 @@ function AiSmallCard({
   tone: "ready" | "done" | "pending" | "danger";
 }) {
   const toneClass = {
-    ready: "border-blue-500/20 bg-blue-500/10 text-blue-200",
-    done: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-    pending: "border-yellow-500/20 bg-yellow-500/10 text-yellow-200",
-    danger: "border-red-500/20 bg-red-500/10 text-red-200",
+    ready: "border-blue-200 bg-white text-blue-700",
+    done: "border-emerald-200 bg-white text-emerald-700",
+    pending: "border-amber-200 bg-white text-amber-700",
+    danger: "border-red-200 bg-white text-red-700",
   }[tone];
 
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <p className="text-xs opacity-80">{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+    <div className={`rounded-xl border p-3 ${toneClass}`}>
+      <p className="text-[11px] opacity-70">{label}</p>
+      <p className="mt-1 text-xl font-bold">{value}</p>
     </div>
   );
 }
-
 
 function SandboxSummaryPanel({
   summary,
@@ -1960,55 +1877,30 @@ function SandboxSummaryPanel({
   loading: boolean;
 }) {
   return (
-    <div className="mb-6 rounded-3xl border border-orange-500/20 bg-orange-500/10 p-5">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-white">
-            <Radar size={19} className="text-orange-300" />
-            <h2 className="text-base font-semibold">Document Sandbox</h2>
-          </div>
-
-          <p className="mt-1 text-sm text-orange-100/70">
-            Sandbox testing runs after antivirus scan. Safe files can continue to access, encryption, plaintext extraction, and AI.
-          </p>
+    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-orange-800">
+          <Radar size={17} />
+          <h2 className="text-sm font-semibold">Sandbox</h2>
         </div>
-
         {loading && (
-          <div className="inline-flex items-center gap-2 text-sm text-orange-200">
-            <Loader2 size={15} className="animate-spin" />
-            Loading sandbox summary...
-          </div>
+          <Loader2 size={15} className="animate-spin text-orange-500" />
         )}
       </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-        <SandboxSmallCard
-          label="Clean Active"
-          value={summary?.clean_active_documents ?? 0}
-          tone="ready"
-        />
-
+      <div className="grid grid-cols-3 gap-2">
         <SandboxSmallCard
           label="Safe"
           value={summary?.safe_documents ?? 0}
           tone="done"
         />
-
         <SandboxSmallCard
           label="Not Tested"
           value={summary?.not_tested_documents ?? 0}
           tone="pending"
         />
-
         <SandboxSmallCard
           label="Unsafe"
           value={summary?.unsafe_documents ?? 0}
-          tone="danger"
-        />
-
-        <SandboxSmallCard
-          label="Failed"
-          value={summary?.failed_documents ?? 0}
           tone="danger"
         />
       </div>
@@ -2026,16 +1918,16 @@ function SandboxSmallCard({
   tone: "ready" | "done" | "pending" | "danger";
 }) {
   const toneClass = {
-    ready: "border-blue-500/20 bg-blue-500/10 text-blue-200",
-    done: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-    pending: "border-yellow-500/20 bg-yellow-500/10 text-yellow-200",
-    danger: "border-red-500/20 bg-red-500/10 text-red-200",
+    ready: "border-blue-200 bg-white text-blue-700",
+    done: "border-emerald-200 bg-white text-emerald-700",
+    pending: "border-amber-200 bg-white text-amber-700",
+    danger: "border-red-200 bg-white text-red-700",
   }[tone];
 
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <p className="text-xs opacity-80">{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+    <div className={`rounded-xl border p-3 ${toneClass}`}>
+      <p className="text-[11px] opacity-70">{label}</p>
+      <p className="mt-1 text-xl font-bold">{value}</p>
     </div>
   );
 }
@@ -2048,47 +1940,27 @@ function EncryptionSummaryPanel({
   loading: boolean;
 }) {
   return (
-    <div className="mb-6 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-5">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-white">
-            <LockKeyhole size={19} className="text-emerald-300" />
-            <h2 className="text-base font-semibold">Document Encryption</h2>
-          </div>
-
-          <p className="mt-1 text-sm text-emerald-100/70">
-            Encryption runs only for active documents that passed antivirus scan.
-            Secure access decrypts encrypted files temporarily for viewing or download.
-          </p>
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-emerald-800">
+          <LockKeyhole size={17} />
+          <h2 className="text-sm font-semibold">Encryption</h2>
         </div>
-
         {loading && (
-          <div className="inline-flex items-center gap-2 text-sm text-emerald-200">
-            <Loader2 size={15} className="animate-spin" />
-            Loading encryption summary...
-          </div>
+          <Loader2 size={15} className="animate-spin text-emerald-500" />
         )}
       </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <EncryptionSmallCard
-          label="Clean Active"
-          value={summary?.clean_active_documents ?? 0}
-          tone="ready"
-        />
-
+      <div className="grid grid-cols-3 gap-2">
         <EncryptionSmallCard
           label="Encrypted"
           value={summary?.encrypted_documents ?? 0}
           tone="done"
         />
-
         <EncryptionSmallCard
           label="Not Encrypted"
           value={summary?.not_encrypted_documents ?? 0}
           tone="pending"
         />
-
         <EncryptionSmallCard
           label="Failed"
           value={summary?.failed_encryption_documents ?? 0}
@@ -2109,16 +1981,16 @@ function EncryptionSmallCard({
   tone: "ready" | "done" | "pending" | "danger";
 }) {
   const toneClass = {
-    ready: "border-blue-500/20 bg-blue-500/10 text-blue-200",
-    done: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-    pending: "border-yellow-500/20 bg-yellow-500/10 text-yellow-200",
-    danger: "border-red-500/20 bg-red-500/10 text-red-200",
+    ready: "border-blue-200 bg-white text-blue-700",
+    done: "border-emerald-200 bg-white text-emerald-700",
+    pending: "border-amber-200 bg-white text-amber-700",
+    danger: "border-red-200 bg-white text-red-700",
   }[tone];
 
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <p className="text-xs opacity-80">{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+    <div className={`rounded-xl border p-3 ${toneClass}`}>
+      <p className="text-[11px] opacity-70">{label}</p>
+      <p className="mt-1 text-xl font-bold">{value}</p>
     </div>
   );
 }
@@ -2127,127 +1999,60 @@ function SandboxPanel({
   document,
   logs,
   loadingLogs,
-  isTesting,
-  isRejecting,
-  onTest,
-  onReject,
 }: {
   document: DmsDocument;
   logs: SandboxLog[];
   loadingLogs: boolean;
-  isTesting: boolean;
-  isRejecting: boolean;
-  onTest: () => void;
-  onReject: () => void;
 }) {
-  const sandboxSafe = isSandboxSafeDocument(document);
-  const canTest = canRunSandbox(document);
-  const canReject = canRejectUnsafeSandbox(document);
-
   return (
-    <div className="mb-6 rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-white">
-          <Radar size={18} className="text-orange-300" />
-          <h3 className="text-sm font-semibold">Sandbox Control</h3>
+    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-orange-800">
+          <Radar size={17} />
+          <h3 className="text-sm font-semibold">Sandbox History</h3>
         </div>
-
-        <span className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(document.sandbox_status)}`}>
+        <span
+          className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(document.sandbox_status)}`}
+        >
           {getReadableStatus(document.sandbox_status)}
         </span>
       </div>
 
-      <div className="mb-4 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs leading-5 text-slate-300">
-        {sandboxSafe
-          ? "This document passed sandbox testing and is safe for the next workflow steps."
-          : canTest
-          ? "This document can be tested because it is active and scanned clean."
-          : canReject
-          ? "This document is unsafe. Review it and reject if the sandbox result is confirmed."
-          : "Sandbox is locked until the document is active and scanned clean, or the current sandbox state allows review."}
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-2">
-        <button
-          type="button"
-          disabled={!canTest || isTesting}
-          onClick={onTest}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isTesting ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <Radar size={15} />
-          )}
-          {sandboxSafe ? "Sandbox Safe" : "Run Sandbox Test"}
-        </button>
-
-        <button
-          type="button"
-          disabled={!canReject || isRejecting}
-          onClick={onReject}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-400/20 px-3 py-2 text-sm text-red-100 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isRejecting ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <ShieldAlert size={15} />
-          )}
-          Reject Unsafe Document
-        </button>
-      </div>
-
-      <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Recent Sandbox Logs
-          </p>
-
-          {loadingLogs && (
-            <Loader2 size={14} className="animate-spin text-slate-500" />
-          )}
+      {loadingLogs ? (
+        <div className="flex items-center gap-2 py-3 text-xs text-slate-500">
+          <Loader2 size={14} className="animate-spin" /> Loading logs...
         </div>
-
-        {!loadingLogs && logs.length === 0 && (
-          <p className="text-xs leading-5 text-slate-500">
-            No sandbox logs found for this document yet.
-          </p>
-        )}
-
+      ) : logs.length === 0 ? (
+        <p className="text-xs text-slate-500">No sandbox logs found.</p>
+      ) : (
         <div className="space-y-2">
           {logs.map((log) => (
             <div
               key={String(log.id ?? `${log.status}-${log.created_at}`)}
-              className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
+              className="rounded-lg border border-orange-100 bg-white p-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-200">
+                <span className="text-xs font-semibold text-slate-700">
                   Sandbox Test
                 </span>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(log.status)}`}>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(log.status)}`}
+                >
                   {getReadableStatus(log.status)}
                 </span>
               </div>
-
-              <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                {log.message || "No message"}
-              </p>
-
-              {log.score !== undefined && log.score !== null && (
-                <p className="mt-1 text-[10px] text-slate-600">
-                  Score: {String(log.score)}
-                </p>
+              {log.message && (
+                <p className="mt-1 text-[11px] text-slate-500">{log.message}</p>
               )}
-
               {log.created_at && (
-                <p className="mt-1 text-[10px] text-slate-600">
+                <p className="mt-1 text-[10px] text-slate-400">
                   {formatDate(log.created_at)}
                 </p>
               )}
             </div>
           ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2256,119 +2061,60 @@ function EncryptionPanel({
   document,
   logs,
   loadingLogs,
-  isEncrypting,
-  isVerifying,
-  onEncrypt,
-  onVerify,
 }: {
   document: DmsDocument;
   logs: EncryptionLog[];
   loadingLogs: boolean;
-  isEncrypting: boolean;
-  isVerifying: boolean;
-  onEncrypt: () => void;
-  onVerify: () => void;
 }) {
-  const encrypted = isEncryptedDocument(document);
-  const canEncrypt = canEncryptDocument(document);
-  const canVerify = canVerifyEncryption(document);
-
   return (
-    <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-white">
-          <LockKeyhole size={18} className="text-emerald-300" />
-          <h3 className="text-sm font-semibold">Encryption Control</h3>
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-emerald-800">
+          <LockKeyhole size={17} />
+          <h3 className="text-sm font-semibold">Encryption History</h3>
         </div>
-
-        <span className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(document.encryption_status)}`}>
+        <span
+          className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(document.encryption_status)}`}
+        >
           {getReadableStatus(document.encryption_status)}
         </span>
       </div>
 
-      <div className="mb-4 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs leading-5 text-slate-300">
-        {encrypted
-          ? "This document is encrypted. Open/download uses the secure access controller and temporary decryption."
-          : canEncrypt
-          ? "This document can be encrypted because it is active and scanned clean."
-          : "Encryption is locked until the document is active, scanned clean, and not already encrypted."}
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-2">
-        <button
-          type="button"
-          disabled={!canEncrypt || isEncrypting}
-          onClick={onEncrypt}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isEncrypting ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <LockKeyhole size={15} />
-          )}
-          {encrypted ? "Already Encrypted" : "Encrypt Document"}
-        </button>
-
-        <button
-          type="button"
-          disabled={!canVerify || isVerifying}
-          onClick={onVerify}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/20 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isVerifying ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <CheckCircle2 size={15} />
-          )}
-          Verify Encryption
-        </button>
-      </div>
-
-      <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Recent Encryption Logs
-          </p>
-
-          {loadingLogs && (
-            <Loader2 size={14} className="animate-spin text-slate-500" />
-          )}
+      {loadingLogs ? (
+        <div className="flex items-center gap-2 py-3 text-xs text-slate-500">
+          <Loader2 size={14} className="animate-spin" /> Loading logs...
         </div>
-
-        {!loadingLogs && logs.length === 0 && (
-          <p className="text-xs leading-5 text-slate-500">
-            No encryption logs found for this document yet.
-          </p>
-        )}
-
+      ) : logs.length === 0 ? (
+        <p className="text-xs text-slate-500">No encryption logs found.</p>
+      ) : (
         <div className="space-y-2">
           {logs.map((log) => (
             <div
-              key={String(log.id ?? `${log.action}-${log.created_at}`)}
-              className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
+              key={String(log.id ?? `${log.status}-${log.created_at}`)}
+              className="rounded-lg border border-emerald-100 bg-white p-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-200">
-                  {getReadableStatus(log.action)}
+                <span className="text-xs font-semibold text-slate-700">
+                  Encryption Event
                 </span>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(log.status)}`}>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(log.status)}`}
+                >
                   {getReadableStatus(log.status)}
                 </span>
               </div>
-
-              <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                {log.message || "No message"}
-              </p>
-
+              {log.message && (
+                <p className="mt-1 text-[11px] text-slate-500">{log.message}</p>
+              )}
               {log.created_at && (
-                <p className="mt-1 text-[10px] text-slate-600">
+                <p className="mt-1 text-[10px] text-slate-400">
                   {formatDate(log.created_at)}
                 </p>
               )}
             </div>
           ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2383,86 +2129,48 @@ function BatchOperationsPanel({
   const actions: Array<{
     action: BatchAction;
     title: string;
-    text: string;
     icon: ReactNode;
   }> = [
-    {
-      action: "scan_pending",
-      title: "Scan Pending",
-      text: "Run antivirus on pending/quarantined documents.",
-      icon: <Bug size={17} />,
-    },
-    {
-      action: "sandbox_pending",
-      title: "Sandbox Pending",
-      text: "Test clean untested files.",
-      icon: <Radar size={17} />,
-    },
+    { action: "scan_pending", title: "Scan Pending", icon: <Bug size={16} /> },
+    { action: "sandbox_pending", title: "Sandbox", icon: <Radar size={16} /> },
     {
       action: "extract_pending",
       title: "Extract Text",
-      text: "Create safe searchable plaintext.",
-      icon: <ScanSearch size={17} />,
+      icon: <ScanSearch size={16} />,
     },
     {
       action: "encrypt_clean",
       title: "Encrypt Clean",
-      text: "Encrypt clean unencrypted files.",
-      icon: <LockKeyhole size={17} />,
+      icon: <LockKeyhole size={16} />,
     },
     {
       action: "ai_pending",
       title: "Analyze AI",
-      text: "Analyze only AI-ready documents.",
-      icon: <BrainCircuit size={17} />,
+      icon: <BrainCircuit size={16} />,
     },
   ];
 
   return (
-    <div className="mb-6 rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-white">
-            <Activity size={18} className="text-emerald-400" />
-            <h2 className="text-base font-semibold">
-              Controller Batch Operations
-            </h2>
-          </div>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Use these buttons for bulk security and AI processing.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {actions.map((item) => {
-          const isLoading = batchLoadingAction === item.action;
-
-          return (
-            <button
-              type="button"
-              key={item.action}
-              onClick={() => onBatchAction(item.action)}
-              disabled={Boolean(batchLoadingAction)}
-              className="rounded-2xl border border-slate-800 bg-[#07111F] p-4 text-left transition-all hover:border-blue-500/40 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-300">
-                {isLoading ? (
-                  <Loader2 size={17} className="animate-spin" />
-                ) : (
-                  item.icon
-                )}
-              </div>
-
-              <p className="font-semibold text-white">{item.title}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                {item.text}
-              </p>
-            </button>
-          );
-        })}
-      </div>
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+      {actions.map((item) => {
+        const isLoading = batchLoadingAction === item.action;
+        return (
+          <button
+            type="button"
+            key={item.action}
+            onClick={() => onBatchAction(item.action)}
+            disabled={Boolean(batchLoadingAction)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              item.icon
+            )}
+            {item.title}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2471,176 +2179,118 @@ function DocumentsTable({
   documents,
   loading,
   selectedDocument,
-  actionLoadingKey,
   onSelectDocument,
-  onDocumentAction,
 }: {
   documents: DmsDocument[];
   loading: boolean;
   selectedDocument: DmsDocument | null;
-  actionLoadingKey: string;
   onSelectDocument: (document: DmsDocument) => void;
-  onDocumentAction: (document: DmsDocument, action: DocumentAction) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/60">
-      <div className="border-b border-slate-800 p-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold text-white">Secure Document Library</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              New documents must be uploaded from a project workspace.
-            </p>
-          </div>
-
-          <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-400">
-            {documents.length} document(s)
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-100 px-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-bold text-slate-900">Results</h2>
+          <span className="text-xs text-slate-400">
+            Click a row to open document controls
           </span>
         </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+          {documents.length} records
+        </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1150px] text-left text-sm">
-          <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-500">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full min-w-[920px] text-left text-sm">
+          <thead className="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
             <tr>
-              <th className="w-10 p-4">
-                <input type="checkbox" className="rounded" readOnly />
-              </th>
-              <th className="p-4">Document</th>
-              <th className="p-4">Category</th>
-              <th className="p-4">Project</th>
-              <th className="p-4">Scan Status</th>
-              <th className="p-4">Security Pipeline</th>
-              <th className="p-4">Workflow</th>
-              <th className="p-4">Modified</th>
-              <th className="p-4">Author</th>
-              <th className="p-4">Scan / AI</th>
+              <th className="px-4 py-3">Document</th>
+              <th className="px-4 py-3">Project</th>
+              <th className="px-4 py-3">Category</th>
+              <th className="px-4 py-3">Scan</th>
+              <th className="px-4 py-3">Pipeline</th>
+              <th className="px-4 py-3">Modified</th>
             </tr>
           </thead>
 
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={10} className="p-10 text-center">
+                <td colSpan={6} className="p-10 text-center">
                   <div className="flex items-center justify-center gap-3 text-slate-400">
                     <Loader2 size={20} className="animate-spin" />
-                    Loading secure documents...
+                    Loading documents...
                   </div>
                 </td>
               </tr>
             ) : documents.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-10 text-center">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-800">
-                      <FolderOpen size={24} className="text-slate-500" />
-                    </div>
-
-                    <div>
-                      <p className="font-medium text-white">
-                        No documents found
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Create a project first, then upload documents from that
-                        project workspace.
-                      </p>
-                    </div>
-
-                    <Link
-                      to="/Projects"
-                      className="mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
-                    >
-                      <Plus size={16} />
-                      Create Project First
-                    </Link>
-                  </div>
+                <td colSpan={6} className="p-10 text-center">
+                  <FolderOpen size={28} className="mx-auto text-slate-600" />
+                  <p className="mt-3 font-semibold text-slate-700">
+                    No documents found
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Create a project and upload documents from its workspace.
+                  </p>
                 </td>
               </tr>
             ) : (
               documents.map((document) => {
                 const isSelected = selectedDocument?.id === document.id;
                 const scanUi = getScanUiState(document);
-                const isScanning =
-                  actionLoadingKey === makeActionKey(document.id, "scan");
-                const isPlaintextExtracting =
-                  actionLoadingKey === makeActionKey(document.id, "plaintext");
-                const isSandboxTesting =
-                  actionLoadingKey === makeActionKey(document.id, "sandbox");
-                const isUnsafeRejecting =
-                  actionLoadingKey === makeActionKey(document.id, "reject_unsafe");
-                const isAiAnalyzing =
-                  actionLoadingKey === makeActionKey(document.id, "ai");
-                const plaintextExtracted = isPlaintextExtracted(document);
-                const canExtractText =
-                  canExtractPlaintext(document) && !plaintextExtracted;
-                const workflowStatus = document.status;
 
                 return (
                   <tr
                     key={document.id}
                     onClick={() => onSelectDocument(document)}
-                    className={`cursor-pointer border-b border-slate-800 transition-colors hover:bg-slate-900/80 ${
-                      isSelected ? "bg-blue-950/30" : ""
+                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 ${
+                      isSelected ? "bg-blue-50/80" : "bg-white"
                     }`}
                   >
-                    <td className="p-4">
-                      <input
-                        type="checkbox"
-                        className="rounded"
-                        checked={isSelected}
-                        readOnly
-                      />
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1">{getFileIcon(document)}</div>
-
-                        <div>
-                          <div className="max-w-xs truncate font-medium text-slate-100">
-                            {document.original_file_name || document.title}
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span>{document.document_code || "No code"}</span>
-                            <span>•</span>
-                            <span>
-                              {document.extension?.toUpperCase() || "FILE"}
-                            </span>
-                            <span>•</span>
-                            <span>{formatBytes(document.file_size)}</span>
-                          </div>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50">
+                          {getFileIcon(document)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="max-w-[280px] truncate font-semibold text-slate-800">
+                            {document.original_file_name ||
+                              document.title ||
+                              `Document #${document.id}`}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            {document.document_code || "No code"} ·{" "}
+                            {document.extension?.toUpperCase() || "FILE"} ·{" "}
+                            {formatBytes(document.file_size)}
+                          </p>
                         </div>
                       </div>
                     </td>
 
-                    <td className="p-4">
-                      <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs text-blue-300">
-                        {document.category?.name || "—"}
+                    <td className="px-4 py-3 text-slate-600">
+                      <p className="max-w-[170px] truncate">
+                        {document.project?.name || "No Project"}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                        {document.category?.name || "Uncategorized"}
                       </span>
                     </td>
 
-                    <td className="p-4 text-slate-400">
-                      {document.project?.name || (
-                        <span className="text-amber-300">No Project</span>
-                      )}
-                    </td>
-
-                    <td className="p-4">
+                    <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${scanUi.badgeClass}`}
                       >
-                        <span className="h-2 w-2 rounded-full bg-current" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         {scanUi.label}
                       </span>
                     </td>
 
-                    <td className="p-4">
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
-                        <SmallPipelineBadge
-                          label="Text"
-                          value={document.plaintext_status}
-                        />
                         <SmallPipelineBadge
                           label="Sandbox"
                           value={document.sandbox_status}
@@ -2649,175 +2299,19 @@ function DocumentsTable({
                           label="Encrypt"
                           value={document.encryption_status}
                         />
-                        <SmallPipelineBadge label="AI" value={document.ai_status} />
+                        <SmallPipelineBadge
+                          label="Text"
+                          value={document.plaintext_status}
+                        />
+                        <SmallPipelineBadge
+                          label="AI"
+                          value={document.ai_status}
+                        />
                       </div>
                     </td>
 
-                    <td className="p-4">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${getStatusClass(
-                          workflowStatus
-                        )}`}
-                      >
-                        {getReadableStatus(workflowStatus)}
-                      </span>
-                    </td>
-
-                    <td className="p-4 text-slate-400">
+                    <td className="px-4 py-3 text-xs text-slate-500">
                       {formatDate(document.updated_at || document.created_at)}
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-800 text-[10px] font-semibold text-white">
-                          {getInitials(document.uploader?.name)}
-                        </div>
-
-                        <span className="max-w-[120px] truncate text-xs text-slate-500">
-                          {document.uploader?.name || "—"}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDocumentAction(document, "check_access");
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-200 hover:bg-blue-500/20"
-                        >
-                          <ShieldCheck size={14} />
-                          Access
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isScanning}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDocumentAction(document, "scan");
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isScanning ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <Bug size={14} className={scanUi.iconClass} />
-                          )}
-                          {isScanning ? "Scanning..." : scanUi.buttonLabel}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={!canRunSandbox(document) || isSandboxTesting}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDocumentAction(document, "sandbox");
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-orange-500/20 bg-orange-500/10 px-3 py-2 text-xs font-medium text-orange-200 hover:bg-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isSandboxTesting ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <Radar size={14} />
-                          )}
-                          Sandbox
-                        </button>
-
-                        {canRejectUnsafeSandbox(document) && (
-                          <button
-                            type="button"
-                            disabled={isUnsafeRejecting}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDocumentAction(document, "reject_unsafe");
-                            }}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isUnsafeRejecting ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <ShieldAlert size={14} />
-                            )}
-                            Reject
-                          </button>
-                        )}
-
-                        {!plaintextExtracted && (
-                          <button
-                            type="button"
-                            disabled={!canExtractText || isPlaintextExtracting}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDocumentAction(document, "plaintext");
-                            }}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-200 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isPlaintextExtracting ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <ScanSearch size={14} />
-                            )}
-                            Extract Text
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          disabled={!canEncryptDocument(document) || actionLoadingKey === makeActionKey(document.id, "encrypt")}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDocumentAction(document, "encrypt");
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {actionLoadingKey === makeActionKey(document.id, "encrypt") ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <LockKeyhole size={14} />
-                          )}
-                          Encrypt
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={!canVerifyEncryption(document) || actionLoadingKey === makeActionKey(document.id, "verify_encryption")}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDocumentAction(document, "verify_encryption");
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {actionLoadingKey === makeActionKey(document.id, "verify_encryption") ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <CheckCircle2 size={14} />
-                          )}
-                          Verify
-                        </button>
-
-                        {plaintextExtracted && (
-                          <button
-                            type="button"
-                            disabled={!canRunAi(document) || isAiAnalyzing}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDocumentAction(document, "ai");
-                            }}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-xs font-medium text-purple-200 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isAiAnalyzing ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <BrainCircuit size={14} />
-                            )}
-                            AI
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 );
@@ -2862,15 +2356,21 @@ function DocumentDetailsPanel({
   onLoadAiAnalysis: (document: DmsDocument) => void;
   onApplyAiSuggestions: (
     document: DmsDocument,
-    payload: AiApplySuggestionsPayload
+    payload: AiApplySuggestionsPayload,
   ) => void;
   onClose: () => void;
 }) {
   if (!selectedDocument) {
     return (
-      <aside className="hidden rounded-3xl border border-slate-800 bg-slate-950/60 p-6 2xl:block">
-        <div className="mt-20 text-center text-sm text-slate-500">
-          Select a document to view scan, security, and AI details.
+      <aside className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center">
+        <div>
+          <FileText size={30} className="mx-auto text-slate-600" />
+          <p className="mt-3 text-sm font-semibold text-slate-700">
+            No document selected
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Select a document from the table.
+          </p>
         </div>
       </aside>
     );
@@ -2878,132 +2378,43 @@ function DocumentDetailsPanel({
 
   const tags = getTags(selectedDocument);
   const scanUi = getScanUiState(selectedDocument);
-
   const isActionLoading = (action: DocumentAction): boolean =>
     actionLoadingKey === makeActionKey(selectedDocument.id, action);
 
   return (
-    <aside className="rounded-3xl border border-slate-800 bg-slate-950/60 p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold text-white">Document Security Details</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Scan result, workflow, encryption, AI, and audit status.
-          </p>
+    <aside className="h-full min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+      <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              {getFileIcon(selectedDocument)}
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-bold text-slate-900">
+                {selectedDocument.original_file_name || selectedDocument.title}
+              </h2>
+              <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                {selectedDocument.document_code || "No document code"} ·{" "}
+                {formatBytes(selectedDocument.file_size)}
+              </p>
+            </div>
+          </div>
         </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="rounded-xl p-2 text-slate-500 hover:bg-slate-800 hover:text-white"
+          className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Close document details"
         >
-          <X size={18} />
+          <X size={17} />
         </button>
       </div>
 
-      <div className="mb-6 flex justify-center">
-        <div className="flex h-40 w-32 flex-col items-center justify-center rounded-2xl border border-slate-700 bg-white text-center font-bold text-red-600">
-          {selectedDocument.extension?.toUpperCase() || "FILE"}
-          <span className="mt-2 text-xs font-medium text-slate-500">
-            {formatBytes(selectedDocument.file_size)}
-          </span>
-        </div>
-      </div>
-
-      <div className="mb-6 text-center">
-        <div className="break-words font-medium text-white">
-          {selectedDocument.original_file_name || selectedDocument.title}
-        </div>
-
-        <div className="mt-1 text-xs text-slate-500">
-          {selectedDocument.document_code || "No document code"}
-        </div>
-      </div>
-
-      <div className={`mb-6 rounded-2xl border p-4 ${scanUi.badgeClass}`}>
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={18} />
-            <p className="font-semibold">{scanUi.label}</p>
-          </div>
-
-          <span className="rounded-full border border-current/20 px-2.5 py-1 text-[11px]">
-            {getReadableStatus(selectedDocument.scan_status)}
-          </span>
-        </div>
-
-        <p className="text-xs leading-5 opacity-90">{scanUi.helper}</p>
-      </div>
-
-      <AccessStatusPanel
-        document={selectedDocument}
-        accessStatus={accessStatus}
-        loading={accessStatusLoading}
-      />
-
-      <SandboxPanel
-        document={selectedDocument}
-        logs={sandboxLogs}
-        loadingLogs={sandboxLogsLoading}
-        isTesting={isActionLoading("sandbox")}
-        isRejecting={isActionLoading("reject_unsafe")}
-        onTest={() => onDocumentAction(selectedDocument, "sandbox")}
-        onReject={() => onDocumentAction(selectedDocument, "reject_unsafe")}
-      />
-
-      <EncryptionPanel
-        document={selectedDocument}
-        logs={encryptionLogs}
-        loadingLogs={encryptionLogsLoading}
-        isEncrypting={isActionLoading("encrypt")}
-        isVerifying={isActionLoading("verify_encryption")}
-        onEncrypt={() => onDocumentAction(selectedDocument, "encrypt")}
-        onVerify={() => onDocumentAction(selectedDocument, "verify_encryption")}
-      />
-
-      <div className="mb-6 grid grid-cols-2 gap-2">
-        <DocumentActionButton
-          label="Check"
-          icon={<ShieldCheck size={15} />}
-          loading={isActionLoading("check_access")}
-          onClick={() => onDocumentAction(selectedDocument, "check_access")}
-        />
-
-        <DocumentActionButton
-          label="Open"
-          icon={<Eye size={15} />}
-          loading={isActionLoading("open")}
-          onClick={() => onDocumentAction(selectedDocument, "open")}
-        />
-
-        <DocumentActionButton
-          label="Download"
-          icon={<Download size={15} />}
-          loading={isActionLoading("download")}
-          onClick={() => onDocumentAction(selectedDocument, "download")}
-        />
-
-        <DocumentActionButton
-          label={scanUi.buttonLabel}
-          icon={<Bug size={15} className={scanUi.iconClass} />}
-          loading={isActionLoading("scan")}
-          onClick={() => onDocumentAction(selectedDocument, "scan")}
-        />
-      </div>
-
-      <div className="mb-6 rounded-2xl border border-slate-800 bg-[#07111F] p-4">
-        <div className="mb-4 flex items-center gap-2 text-white">
-          <Workflow size={17} className="text-blue-400" />
-          <h3 className="text-sm font-semibold">Selected File Pipeline</h3>
-        </div>
-
-        <div className="space-y-2">
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-2 gap-2">
           <PipelineStatusRow
-            label="Document Status"
-            value={selectedDocument.status}
-          />
-          <PipelineStatusRow
-            label="Antivirus"
+            label="Scan"
             value={selectedDocument.scan_status}
           />
           <PipelineStatusRow
@@ -3011,203 +2422,267 @@ function DocumentDetailsPanel({
             value={selectedDocument.sandbox_status}
           />
           <PipelineStatusRow
-            label="Plaintext / OCR"
-            value={selectedDocument.plaintext_status}
-          />
-          <PipelineStatusRow
             label="Encryption"
             value={selectedDocument.encryption_status}
           />
-          <PipelineStatusRow label="AI Ready" value={selectedDocument.ai_status} />
-        </div>
-      </div>
-
-      <div className="mb-6 rounded-2xl border border-slate-800 bg-[#07111F] p-4">
-        <div className="mb-4 flex items-center gap-2 text-white">
-          <Activity size={17} className="text-emerald-400" />
-          <h3 className="text-sm font-semibold">Controller Actions</h3>
+          <PipelineStatusRow label="AI" value={selectedDocument.ai_status} />
         </div>
 
-        <div className="grid grid-cols-1 gap-2">
-          <DocumentActionButton
-            label={scanUi.buttonLabel}
-            icon={<Bug size={15} className={scanUi.iconClass} />}
-            loading={isActionLoading("scan")}
-            onClick={() => onDocumentAction(selectedDocument, "scan")}
-          />
+        <div className={`rounded-xl border p-3 ${scanUi.badgeClass}`}>
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={17} />
+            <p className="text-sm font-semibold">{scanUi.label}</p>
+          </div>
+          <p className="mt-1 text-xs opacity-80">{scanUi.helper}</p>
+        </div>
 
-          <DocumentActionButton
-            label={isSandboxSafeDocument(selectedDocument) ? "Sandbox Safe" : "Run Sandbox Test"}
-            icon={<Radar size={15} />}
-            loading={isActionLoading("sandbox")}
-            onClick={() => onDocumentAction(selectedDocument, "sandbox")}
-          />
-
-          {canRejectUnsafeSandbox(selectedDocument) && (
+        <div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Access
+          </p>
+          <div className="grid grid-cols-3 gap-2">
             <DocumentActionButton
-              label="Reject Unsafe Document"
-              icon={<ShieldAlert size={15} />}
-              loading={isActionLoading("reject_unsafe")}
-              onClick={() => onDocumentAction(selectedDocument, "reject_unsafe")}
+              label="Check"
+              icon={<ShieldCheck size={15} />}
+              loading={isActionLoading("check_access")}
+              onClick={() => onDocumentAction(selectedDocument, "check_access")}
             />
-          )}
-
-          <DocumentActionButton
-            label="Extract Plaintext / OCR"
-            icon={<ScanSearch size={15} />}
-            loading={isActionLoading("plaintext")}
-            onClick={() => onDocumentAction(selectedDocument, "plaintext")}
-          />
-
-          <DocumentActionButton
-            label={isEncryptedDocument(selectedDocument) ? "Already Encrypted" : "Encrypt Document"}
-            icon={<LockKeyhole size={15} />}
-            loading={isActionLoading("encrypt")}
-            onClick={() => onDocumentAction(selectedDocument, "encrypt")}
-          />
-
-          <DocumentActionButton
-            label="Verify Encryption"
-            icon={<CheckCircle2 size={15} />}
-            loading={isActionLoading("verify_encryption")}
-            onClick={() => onDocumentAction(selectedDocument, "verify_encryption")}
-          />
-
-          <DocumentActionButton
-            label={
-              isPlaintextExtracted(selectedDocument)
-                ? "Analyze with AI"
-                : "Extract Plaintext First"
-            }
-            icon={
-              isPlaintextExtracted(selectedDocument) ? (
-                <BrainCircuit size={15} />
-              ) : (
-                <ScanSearch size={15} />
-              )
-            }
-            loading={
-              isPlaintextExtracted(selectedDocument)
-                ? isActionLoading("ai")
-                : isActionLoading("plaintext")
-            }
-            onClick={() =>
-              onDocumentAction(
-                selectedDocument,
-                isPlaintextExtracted(selectedDocument) ? "ai" : "plaintext"
-              )
-            }
-          />
-        </div>
-      </div>
-
-      <AiDocumentPanel
-        document={selectedDocument}
-        aiAnalysis={aiAnalysis}
-        loading={aiAnalysisLoading}
-        applying={aiApplyLoading}
-        canRunAi={canRunAi(selectedDocument)}
-        canExtractText={
-          canExtractPlaintext(selectedDocument) &&
-          !isPlaintextExtracted(selectedDocument)
-        }
-        isAnalyzing={isActionLoading("ai")}
-        isExtracting={isActionLoading("plaintext")}
-        onAnalyze={() => onDocumentAction(selectedDocument, "ai")}
-        onExtractText={() => onDocumentAction(selectedDocument, "plaintext")}
-        onRefresh={() => onLoadAiAnalysis(selectedDocument)}
-        onApplyAll={() =>
-          onApplyAiSuggestions(selectedDocument, {
-            apply_tags: true,
-            apply_category: true,
-            apply_document_type: true,
-            apply_security_level: true,
-          })
-        }
-        onApplyTags={() =>
-          onApplyAiSuggestions(selectedDocument, {
-            apply_tags: true,
-          })
-        }
-        onApplyCategory={() =>
-          onApplyAiSuggestions(selectedDocument, {
-            apply_category: true,
-          })
-        }
-        onApplyDocumentType={() =>
-          onApplyAiSuggestions(selectedDocument, {
-            apply_document_type: true,
-          })
-        }
-        onApplySecurity={() =>
-          onApplyAiSuggestions(selectedDocument, {
-            apply_security_level: true,
-          })
-        }
-      />
-
-      <div className="space-y-4 text-sm">
-        <DetailRow label="Title" value={selectedDocument.title || "—"} />
-        <DetailRow
-          label="Type"
-          value={getReadableStatus(selectedDocument.document_type)}
-        />
-        <DetailRow
-          label="Category"
-          value={selectedDocument.category?.name || "—"}
-        />
-        <DetailRow
-          label="Project"
-          value={selectedDocument.project?.name || "No Project"}
-        />
-        <DetailRow
-          label="Security"
-          value={getReadableStatus(selectedDocument.security_level)}
-        />
-        <DetailRow
-          label="Status"
-          value={getReadableStatus(selectedDocument.status)}
-        />
-        <DetailRow
-          label="Scan"
-          value={getReadableStatus(selectedDocument.scan_status)}
-        />
-        <DetailRow
-          label="Uploaded By"
-          value={selectedDocument.uploader?.name || "—"}
-        />
-        <DetailRow label="Created" value={formatDate(selectedDocument.created_at)} />
-        <DetailRow label="Modified" value={formatDate(selectedDocument.updated_at)} />
-      </div>
-
-      {selectedDocument.description && (
-        <div className="mt-6 border-t border-slate-800 pt-5">
-          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
-            Description
-          </p>
-          <p className="text-sm leading-6 text-slate-300">
-            {selectedDocument.description}
-          </p>
-        </div>
-      )}
-
-      {tags.length > 0 && (
-        <div className="mt-6 border-t border-slate-800 pt-5">
-          <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">
-            Tags
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-md bg-blue-500/15 px-2 py-1 text-xs text-blue-300"
-              >
-                {tag}
-              </span>
-            ))}
+            <DocumentActionButton
+              label="Open"
+              icon={<Eye size={15} />}
+              loading={isActionLoading("open")}
+              onClick={() => onDocumentAction(selectedDocument, "open")}
+            />
+            <DocumentActionButton
+              label="Download"
+              icon={<Download size={15} />}
+              loading={isActionLoading("download")}
+              onClick={() => onDocumentAction(selectedDocument, "download")}
+            />
           </div>
         </div>
-      )}
+
+        <div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Workflow Actions
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <DocumentActionButton
+              label={scanUi.buttonLabel}
+              icon={<Bug size={15} className={scanUi.iconClass} />}
+              loading={isActionLoading("scan")}
+              onClick={() => onDocumentAction(selectedDocument, "scan")}
+            />
+            <DocumentActionButton
+              label={
+                isSandboxSafeDocument(selectedDocument)
+                  ? "Sandbox Safe"
+                  : "Run Sandbox"
+              }
+              icon={<Radar size={15} />}
+              loading={isActionLoading("sandbox")}
+              onClick={() => onDocumentAction(selectedDocument, "sandbox")}
+            />
+            {canRejectUnsafeSandbox(selectedDocument) && (
+              <DocumentActionButton
+                label="Reject Unsafe"
+                icon={<ShieldAlert size={15} />}
+                loading={isActionLoading("reject_unsafe")}
+                onClick={() =>
+                  onDocumentAction(selectedDocument, "reject_unsafe")
+                }
+              />
+            )}
+            <DocumentActionButton
+              label={
+                isEncryptedDocument(selectedDocument) ? "Encrypted" : "Encrypt"
+              }
+              icon={<LockKeyhole size={15} />}
+              loading={isActionLoading("encrypt")}
+              onClick={() => onDocumentAction(selectedDocument, "encrypt")}
+            />
+            <DocumentActionButton
+              label="Verify"
+              icon={<CheckCircle2 size={15} />}
+              loading={isActionLoading("verify_encryption")}
+              onClick={() =>
+                onDocumentAction(selectedDocument, "verify_encryption")
+              }
+            />
+          </div>
+        </div>
+
+        <details className="group rounded-xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
+            Access Control
+            <span className="text-xs text-blue-600 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs text-blue-600 group-open:inline">
+              Close
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-3">
+            <AccessStatusPanel
+              document={selectedDocument}
+              accessStatus={accessStatus}
+              loading={accessStatusLoading}
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
+            Sandbox History
+            <span className="text-xs text-blue-600 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs text-blue-600 group-open:inline">
+              Close
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-3">
+            <SandboxPanel
+              document={selectedDocument}
+              logs={sandboxLogs}
+              loadingLogs={sandboxLogsLoading}
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
+            Encryption History
+            <span className="text-xs text-blue-600 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs text-blue-600 group-open:inline">
+              Close
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-3">
+            <EncryptionPanel
+              document={selectedDocument}
+              logs={encryptionLogs}
+              loadingLogs={encryptionLogsLoading}
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
+            AI Analysis
+            <span className="text-xs text-blue-600 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs text-blue-600 group-open:inline">
+              Close
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-3">
+            <AiDocumentPanel
+              document={selectedDocument}
+              aiAnalysis={aiAnalysis}
+              loading={aiAnalysisLoading}
+              applying={aiApplyLoading}
+              canRunAi={canRunAi(selectedDocument)}
+              canExtractText={
+                canExtractPlaintext(selectedDocument) &&
+                !isPlaintextExtracted(selectedDocument)
+              }
+              isAnalyzing={isActionLoading("ai")}
+              isExtracting={isActionLoading("plaintext")}
+              onAnalyze={() => onDocumentAction(selectedDocument, "ai")}
+              onExtractText={() =>
+                onDocumentAction(selectedDocument, "plaintext")
+              }
+              onRefresh={() => onLoadAiAnalysis(selectedDocument)}
+              onApplyAll={() =>
+                onApplyAiSuggestions(selectedDocument, {
+                  apply_tags: true,
+                  apply_category: true,
+                  apply_document_type: true,
+                  apply_security_level: true,
+                })
+              }
+              onApplyTags={() =>
+                onApplyAiSuggestions(selectedDocument, { apply_tags: true })
+              }
+              onApplyCategory={() =>
+                onApplyAiSuggestions(selectedDocument, { apply_category: true })
+              }
+              onApplyDocumentType={() =>
+                onApplyAiSuggestions(selectedDocument, {
+                  apply_document_type: true,
+                })
+              }
+              onApplySecurity={() =>
+                onApplyAiSuggestions(selectedDocument, {
+                  apply_security_level: true,
+                })
+              }
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
+            Document Information
+            <span className="text-xs text-blue-600 group-open:hidden">
+              Open
+            </span>
+            <span className="hidden text-xs text-blue-600 group-open:inline">
+              Close
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-slate-100 p-3 text-sm">
+            <DetailRow label="Title" value={selectedDocument.title || "—"} />
+            <DetailRow
+              label="Type"
+              value={getReadableStatus(selectedDocument.document_type)}
+            />
+            <DetailRow
+              label="Category"
+              value={selectedDocument.category?.name || "—"}
+            />
+            <DetailRow
+              label="Project"
+              value={selectedDocument.project?.name || "No Project"}
+            />
+            <DetailRow
+              label="Security"
+              value={getReadableStatus(selectedDocument.security_level)}
+            />
+            <DetailRow
+              label="Uploaded By"
+              value={selectedDocument.uploader?.name || "—"}
+            />
+            <DetailRow
+              label="Modified"
+              value={formatDate(selectedDocument.updated_at)}
+            />
+
+            {selectedDocument.description && (
+              <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                {selectedDocument.description}
+              </div>
+            )}
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
     </aside>
   );
 }
@@ -3253,16 +2728,16 @@ function AiDocumentPanel({
   const plaintextExtracted = isPlaintextExtracted(document);
 
   return (
-    <div className="mb-6 rounded-2xl border border-purple-500/20 bg-purple-500/10 p-4">
+    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-white">
-          <BrainCircuit size={18} className="text-purple-300" />
+        <div className="flex items-center gap-2 text-violet-800">
+          <BrainCircuit size={18} className="text-violet-600" />
           <h3 className="text-sm font-semibold">AI Analysis</h3>
         </div>
 
         <span
           className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(
-            document.ai_status
+            document.ai_status,
           )}`}
         >
           {getReadableStatus(document.ai_status)}
@@ -3270,14 +2745,14 @@ function AiDocumentPanel({
       </div>
 
       {!plaintextExtracted && (
-        <div className="mb-4 rounded-xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs leading-5 text-blue-100/80">
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-700">
           Extract plaintext/OCR first. AI reads safe extracted text, not the raw
           file directly.
         </div>
       )}
 
       {plaintextExtracted && !canRunAi && (
-        <div className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs leading-5 text-yellow-100/80">
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-700">
           Plaintext is ready, but AI is still locked until the document is
           active, scanned clean, and sandbox safe.
         </div>
@@ -3318,7 +2793,7 @@ function AiDocumentPanel({
           type="button"
           disabled={loading || aiStatus !== "analyzed"}
           onClick={onRefresh}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-purple-400/20 px-3 py-2 text-sm text-purple-100 hover:bg-purple-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? (
             <Loader2 size={15} className="animate-spin" />
@@ -3330,13 +2805,13 @@ function AiDocumentPanel({
       </div>
 
       {loading && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
           Loading AI analysis...
         </div>
       )}
 
       {!loading && !analysis && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500">
           No AI analysis result found yet. Run AI after security processing is
           complete.
         </div>
@@ -3344,11 +2819,11 @@ function AiDocumentPanel({
 
       {analysis && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
               Summary
             </p>
-            <p className="text-sm leading-6 text-slate-200">
+            <p className="text-sm leading-6 text-slate-700">
               {analysis.summary || "No summary returned."}
             </p>
           </div>
@@ -3381,7 +2856,7 @@ function AiDocumentPanel({
           </div>
 
           {tags.length > 0 && (
-            <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
               <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">
                 Suggested Tags
               </p>
@@ -3390,7 +2865,7 @@ function AiDocumentPanel({
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-md bg-purple-500/15 px-2 py-1 text-xs text-purple-200"
+                    className="rounded-md bg-violet-100 px-2 py-1 text-xs text-violet-700"
                   >
                     {tag}
                   </span>
@@ -3399,7 +2874,7 @@ function AiDocumentPanel({
             </div>
           )}
 
-          <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">
               Apply AI Suggestions
             </p>
@@ -3464,10 +2939,10 @@ function AccessStatusPanel({
 
   const panelClass =
     accessStatus && canView && isSafe
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : accessStatus && reasonBlocked
-      ? "border-red-500/20 bg-red-500/10 text-red-200"
-      : fallbackAccess.badgeClass;
+        ? "border-red-200 bg-red-50 text-red-700"
+        : fallbackAccess.badgeClass;
 
   return (
     <div className={`mb-6 rounded-2xl border p-4 ${panelClass}`}>
@@ -3505,7 +2980,11 @@ function AccessStatusPanel({
         <AccessFlag label="Safe to open" enabled={isSafe} />
         <AccessFlag label="Sandbox safe" enabled={isSandboxSafe} />
         <AccessFlag label="Encrypted" enabled={isEncrypted} neutral />
-        <AccessFlag label="Permission checked" enabled={Boolean(accessStatus)} neutral />
+        <AccessFlag
+          label="Permission checked"
+          enabled={Boolean(accessStatus)}
+          neutral
+        />
       </div>
     </div>
   );
@@ -3522,11 +3001,11 @@ function AccessFlag({
 }) {
   const className = neutral
     ? enabled
-      ? "border-blue-500/20 bg-blue-500/10 text-blue-200"
-      : "border-slate-700 bg-slate-900 text-slate-500"
+      ? "border-blue-200 bg-blue-50 text-blue-700"
+      : "border-slate-200 bg-slate-50 text-slate-500"
     : enabled
-    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
-    : "border-red-500/20 bg-red-500/10 text-red-200";
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-red-200 bg-red-50 text-red-700";
 
   return (
     <div className={`rounded-xl border px-3 py-2 ${className}`}>
@@ -3554,7 +3033,7 @@ function DocumentActionButton({
       type="button"
       onClick={onClick}
       disabled={loading}
-      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {loading ? <Loader2 size={15} className="animate-spin" /> : icon}
       {label}
@@ -3564,9 +3043,9 @@ function DocumentActionButton({
 
 function AiInfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
       <span className="text-xs text-slate-500">{label}</span>
-      <span className="max-w-[170px] break-words text-right text-xs text-slate-200">
+      <span className="max-w-[170px] break-words text-right text-xs font-medium text-slate-700">
         {value}
       </span>
     </div>
@@ -3587,7 +3066,7 @@ function AiApplyButton({
       type="button"
       disabled={loading}
       onClick={onClick}
-      className="inline-flex items-center justify-center gap-2 rounded-xl border border-purple-400/20 px-3 py-2 text-xs font-medium text-purple-100 hover:bg-purple-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+      className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {loading ? (
         <Loader2 size={14} className="animate-spin" />
@@ -3615,14 +3094,14 @@ function CreateCategoryModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/45 px-4 py-6 backdrop-blur-sm">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-[#07111F] shadow-2xl"
+        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
       >
-        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-900">
               Create Document Category
             </h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -3634,7 +3113,7 @@ function CreateCategoryModal({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X size={18} />
           </button>
@@ -3642,26 +3121,26 @@ function CreateCategoryModal({
 
         <div className="space-y-5 p-6">
           {errorMessage && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {errorMessage}
             </div>
           )}
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">
-              Category Name <span className="text-red-300">*</span>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Category Name <span className="text-red-600">*</span>
             </label>
             <input
               value={form.name}
               onChange={(event) => onChange("name", event.target.value)}
               placeholder="Example: Geological Reports"
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white"
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+              <label className="mb-2 block text-sm font-medium text-slate-700">
                 Status
               </label>
               <select
@@ -3669,22 +3148,22 @@ function CreateCategoryModal({
                 onChange={(event) =>
                   onChange(
                     "status",
-                    event.target.value === "inactive" ? "inactive" : "active"
+                    event.target.value === "inactive" ? "inactive" : "active",
                   )
                 }
-                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200 outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:bg-white"
               >
-                <option value="active" className="bg-slate-950">
+                <option value="active" className="bg-white">
                   Active
                 </option>
-                <option value="inactive" className="bg-slate-950">
+                <option value="inactive" className="bg-white">
                   Inactive
                 </option>
               </select>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+              <label className="mb-2 block text-sm font-medium text-slate-700">
                 Sort Order
               </label>
               <input
@@ -3693,13 +3172,13 @@ function CreateCategoryModal({
                 value={form.sort_order}
                 onChange={(event) => onChange("sort_order", event.target.value)}
                 placeholder="Example: 1"
-                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white"
               />
             </div>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">
+            <label className="mb-2 block text-sm font-medium text-slate-700">
               Description
             </label>
             <textarea
@@ -3707,17 +3186,17 @@ function CreateCategoryModal({
               onChange={(event) => onChange("description", event.target.value)}
               rows={4}
               placeholder="Short description about this category..."
-              className="w-full resize-none rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white"
             />
           </div>
         </div>
 
-        <div className="flex flex-col-reverse gap-3 border-t border-slate-800 px-6 py-5 sm:flex-row sm:justify-end">
+        <div className="flex flex-col-reverse gap-3 border-t border-slate-100 px-6 py-5 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
@@ -3727,7 +3206,11 @@ function CreateCategoryModal({
             disabled={saving}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            {saving ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Plus size={16} />
+            )}
             {saving ? "Saving..." : "Create Category"}
           </button>
         </div>
@@ -3738,52 +3221,31 @@ function CreateCategoryModal({
 
 function DocumentsPageTabs() {
   const tabs = [
-    {
-      label: "All Documents",
-      path: "/alldocuments",
-      icon: Files,
-    },
-    {
-      label: "My Documents",
-      path: "/mydocs",
-      icon: UserCircle2,
-    },
-    {
-      label: "Shared with Me",
-      path: "/shareddocs",
-      icon: Share2,
-    },
-    {
-      label: "Favorites",
-      path: "/favorite",
-      icon: Star,
-    },
-    {
-      label: "Archive",
-      path: "/archive",
-      icon: ArchiveIcon,
-    },
+    { label: "All Documents", path: "/alldocuments", icon: Files },
+    // { label: "My Documents", path: "/mydocs", icon: UserCircle2 },
+    // { label: "Shared", path: "/shareddocs", icon: Share2 },
+    // { label: "Favorites", path: "/favorite", icon: Star },
+    // { label: "Archive", path: "/archive", icon: ArchiveIcon },
   ];
 
   return (
-    <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="min-w-0 overflow-x-auto">
+      <div className="flex min-w-max items-center gap-1 rounded-xl bg-slate-100 p-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-
           return (
             <NavLink
               key={tab.path}
               to={tab.path}
               className={({ isActive }) =>
-                `inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                `inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition ${
                   isActive
-                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
-                    : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    ? "bg-white text-blue-700 shadow-sm"
+                    : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
                 }`
               }
             >
-              <Icon size={16} />
+              <Icon size={14} />
               {tab.label}
             </NavLink>
           );
@@ -3807,76 +3269,28 @@ function SummaryCard({
   tone?: "default" | "success" | "warning" | "danger";
 }) {
   const toneClass = {
-    default: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-    success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-    warning: "bg-yellow-500/10 text-yellow-300 border-yellow-500/20",
-    danger: "bg-red-500/10 text-red-300 border-red-500/20",
+    default: "bg-blue-50 text-blue-600 border-blue-100",
+    success: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    warning: "bg-amber-50 text-amber-600 border-amber-100",
+    danger: "bg-red-50 text-red-600 border-red-100",
   }[tone];
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs text-slate-500">{title}</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-          <p className="mt-1 text-xs text-slate-600">{helper}</p>
-        </div>
-
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${toneClass}`}
-        >
-          {icon}
-        </div>
+    <div className="flex min-w-[132px] items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}
+      >
+        {icon}
       </div>
-    </div>
-  );
-}
 
-function MiniFeature({
-  icon,
-  title,
-  text,
-}: {
-  icon: ReactNode;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-700/70 bg-slate-950/50 p-4">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-        <span className="text-blue-300">{icon}</span>
-        {title}
-      </div>
-      <p className="text-xs leading-5 text-slate-500">{text}</p>
-    </div>
-  );
-}
-
-function RuleLine({
-  icon,
-  title,
-  text,
-  tone,
-}: {
-  icon: ReactNode;
-  title: string;
-  text: string;
-  tone: "success" | "warning" | "danger";
-}) {
-  const toneClass = {
-    success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-    warning: "bg-yellow-500/10 text-yellow-300 border-yellow-500/20",
-    danger: "bg-red-500/10 text-red-300 border-red-500/20",
-  }[tone];
-
-  return (
-    <div className={`rounded-2xl border p-3 ${toneClass}`}>
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5">{icon}</div>
-        <div>
-          <p className="font-semibold">{title}</p>
-          <p className="mt-1 text-xs leading-5 opacity-90">{text}</p>
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-1.5">
+          <p className="text-lg font-bold leading-none text-slate-900">{value}</p>
+          <p className="truncate text-[11px] font-semibold text-slate-500">
+            {title}
+          </p>
         </div>
+        <p className="mt-1 truncate text-[10px] text-slate-400">{helper}</p>
       </div>
     </div>
   );
@@ -3892,7 +3306,7 @@ function SmallPipelineBadge({
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(
-        value
+        value,
       )}`}
     >
       {label}
@@ -3908,12 +3322,12 @@ function PipelineStatusRow({
   value?: string | null;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
-      <span className="text-xs text-slate-500">{label}</span>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
       <span
-        className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusClass(
-          value
-        )}`}
+        className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] ${getStatusClass(value)}`}
       >
         {getReadableStatus(value)}
       </span>
@@ -3929,9 +3343,9 @@ function DetailRow({
   value: string | number | null | undefined;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-3 last:border-b-0">
+    <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-b-0">
       <span className="text-slate-500">{label}</span>
-      <span className="max-w-[180px] break-words text-right text-slate-200">
+      <span className="max-w-[190px] break-words text-right font-medium text-slate-700">
         {value || "—"}
       </span>
     </div>

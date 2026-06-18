@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ElementType, FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
   AlertCircle,
   Bell,
   Building2,
-  Calendar,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Edit3,
   Eye,
-  Filter,
+  FileText,
+  FolderKanban,
   FolderOpen,
   Loader2,
   MapPin,
@@ -28,13 +29,18 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+
 import AdminSidebar from "../../AdminSidebar";
+
 import {
   createProject,
   deleteProject,
+  getCurrentUser,
   getProjects,
   updateProject,
 } from "../../../../services/dmsApi";
+
+import type { UserSummary } from "../../../../services/dmsApi";
 
 type ApiError = Error & {
   status?: number;
@@ -92,6 +98,13 @@ type ProjectFormState = {
   end_date: string;
 };
 
+type SelectOption = {
+  label: string;
+  value: string;
+};
+
+const PAGE_SIZE = 6;
+
 const emptyForm: ProjectFormState = {
   name: "",
   code: "",
@@ -106,16 +119,16 @@ const emptyForm: ProjectFormState = {
   end_date: "",
 };
 
-const statusOptions = [
-  { label: "All Status", value: "" },
+const statusOptions: SelectOption[] = [
+  { label: "All statuses", value: "" },
   { label: "Planned", value: "planned" },
   { label: "Active", value: "active" },
   { label: "Completed", value: "completed" },
   { label: "Archived", value: "archived" },
 ];
 
-const projectTypeOptions = [
-  { label: "All Types", value: "" },
+const projectTypeOptions: SelectOption[] = [
+  { label: "All project types", value: "" },
   { label: "Geological Survey", value: "geological_survey" },
   { label: "Construction", value: "construction" },
   { label: "Technical Study", value: "technical_study" },
@@ -124,8 +137,8 @@ const projectTypeOptions = [
   { label: "Other", value: "other" },
 ];
 
-const securityOptions = [
-  { label: "All Security", value: "" },
+const securityOptions: SelectOption[] = [
+  { label: "All security levels", value: "" },
   { label: "Public", value: "public" },
   { label: "Internal", value: "internal" },
   { label: "Confidential", value: "confidential" },
@@ -137,24 +150,28 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 }
 
 function toLower(value?: string | null): string {
-  return value ? value.toLowerCase() : "";
+  return value ? String(value).toLowerCase() : "";
 }
 
 function getReadableStatus(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "Not specified";
 
   return value
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat().format(value);
 }
 
 function formatDate(date?: string | null): string {
-  if (!date) return "—";
+  if (!date) return "Not set";
 
   const parsed = new Date(date);
 
   if (Number.isNaN(parsed.getTime())) {
-    return "—";
+    return "Not set";
   }
 
   return parsed.toLocaleDateString(undefined, {
@@ -164,127 +181,221 @@ function formatDate(date?: string | null): string {
   });
 }
 
+function formatRelativeTime(date?: string | null): string {
+  if (!date) return "No activity";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "No activity";
+
+  const difference = Date.now() - parsed.getTime();
+  const minutes = Math.floor(difference / 60000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+
+  if (days < 7) return `${days}d ago`;
+
+  return formatDate(date);
+}
+
 function getProjectDocumentsCount(project: ProjectRecord): number {
-  if (typeof project.documents_count === "number") return project.documents_count;
-  if (typeof project.document_count === "number") return project.document_count;
-  if (Array.isArray(project.documents)) return project.documents.length;
+  if (typeof project.documents_count === "number") {
+    return project.documents_count;
+  }
+
+  if (typeof project.document_count === "number") {
+    return project.document_count;
+  }
+
+  if (Array.isArray(project.documents)) {
+    return project.documents.length;
+  }
 
   return 0;
 }
 
-function getProjectProgress(project: ProjectRecord): number {
-  if (typeof project.metadata?.progress === "number") {
-    return project.metadata.progress;
+function getRecordedProgress(project: ProjectRecord): number | null {
+  const value = project.metadata?.progress;
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
   }
 
-  const status = toLower(project.status);
-
-  if (status === "completed") return 100;
-  if (status === "active") return 45;
-  if (status === "planned") return 10;
-  if (status === "archived") return 100;
-
-  return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function getStatusClass(status?: string | null): string {
   switch (toLower(status)) {
     case "active":
-      return "text-emerald-400 bg-emerald-400/10 border-emerald-400/20";
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "planned":
-      return "text-blue-400 bg-blue-400/10 border-blue-400/20";
+      return "border-blue-200 bg-blue-50 text-blue-700";
     case "completed":
-      return "text-purple-400 bg-purple-400/10 border-purple-400/20";
+      return "border-violet-200 bg-violet-50 text-violet-700";
     case "archived":
-      return "text-slate-400 bg-slate-500/10 border-slate-500/20";
+      return "border-slate-200 bg-slate-100 text-slate-600";
     default:
-      return "text-slate-400 bg-slate-500/10 border-slate-500/20";
+      return "border-amber-200 bg-amber-50 text-amber-700";
   }
 }
 
 function getSecurityClass(securityLevel?: string | null): string {
   switch (toLower(securityLevel)) {
     case "public":
-      return "text-emerald-400 bg-emerald-400/10 border-emerald-400/20";
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "internal":
-      return "text-blue-400 bg-blue-400/10 border-blue-400/20";
+      return "border-blue-200 bg-blue-50 text-blue-700";
     case "confidential":
-      return "text-amber-400 bg-amber-400/10 border-amber-400/20";
+      return "border-amber-200 bg-amber-50 text-amber-700";
     case "restricted":
-      return "text-red-400 bg-red-400/10 border-red-400/20";
+      return "border-red-200 bg-red-50 text-red-700";
     default:
-      return "text-slate-400 bg-slate-500/10 border-slate-500/20";
+      return "border-slate-200 bg-slate-50 text-slate-600";
   }
 }
 
-function getProjectIcon(project: ProjectRecord) {
-  const type = toLower(project.project_type);
+function getProjectVisual(project: ProjectRecord): {
+  icon: ElementType;
+  wrapperClass: string;
+  progressClass: string;
+} {
+  const projectType = toLower(project.project_type);
 
-  if (type === "geological_survey" || type === "mining") {
+  if (
+    projectType === "geological_survey" ||
+    projectType === "mining"
+  ) {
     return {
-      Icon: Mountain,
-      iconColor: "text-purple-400",
-      iconBg: "bg-purple-500/10",
-      progressColor: "bg-purple-500",
-      progressBg: "bg-purple-500/20",
+      icon: Mountain,
+      wrapperClass: "bg-violet-50 text-violet-600",
+      progressClass: "bg-violet-500",
     };
   }
 
-  if (type === "construction") {
+  if (projectType === "construction") {
     return {
-      Icon: Building2,
-      iconColor: "text-blue-400",
-      iconBg: "bg-blue-500/10",
-      progressColor: "bg-blue-500",
-      progressBg: "bg-blue-500/20",
+      icon: Building2,
+      wrapperClass: "bg-blue-50 text-blue-600",
+      progressClass: "bg-blue-600",
     };
   }
 
-  if (type === "technical_study") {
+  if (projectType === "technical_study") {
     return {
-      Icon: Puzzle,
-      iconColor: "text-amber-400",
-      iconBg: "bg-amber-500/10",
-      progressColor: "bg-amber-500",
-      progressBg: "bg-amber-500/20",
+      icon: Puzzle,
+      wrapperClass: "bg-amber-50 text-amber-600",
+      progressClass: "bg-amber-500",
     };
   }
 
-  if (type === "administration") {
+  if (projectType === "administration") {
     return {
-      Icon: PenTool,
-      iconColor: "text-teal-400",
-      iconBg: "bg-teal-500/10",
-      progressColor: "bg-teal-500",
-      progressBg: "bg-teal-500/20",
+      icon: PenTool,
+      wrapperClass: "bg-emerald-50 text-emerald-600",
+      progressClass: "bg-emerald-500",
     };
   }
 
   return {
-    Icon: FolderOpen,
-    iconColor: "text-slate-400",
-    iconBg: "bg-slate-500/10",
-    progressColor: "bg-slate-500",
-    progressBg: "bg-slate-500/20",
+    icon: FolderOpen,
+    wrapperClass: "bg-slate-100 text-slate-600",
+    progressClass: "bg-slate-500",
   };
+}
+
+function getInitials(name?: string | null): string {
+  if (!name) return "DU";
+
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function getUserName(user: UserSummary | null): string {
+  return user?.name || "DMS User";
+}
+
+function getRoleName(user: UserSummary | null): string {
+  const role = (user as { role?: unknown } | null)?.role;
+
+  if (!role) return "Project User";
+
+  if (typeof role === "string") {
+    return getReadableStatus(role);
+  }
+
+  if (typeof role === "object" && role !== null) {
+    const roleObject = role as {
+      name?: string;
+      slug?: string;
+    };
+
+    return (
+      roleObject.name ||
+      getReadableStatus(roleObject.slug) ||
+      "Project User"
+    );
+  }
+
+  return "Project User";
+}
+
+function normalizeProjectsResponse(response: unknown): ProjectRecord[] {
+  if (Array.isArray(response)) {
+    return response as ProjectRecord[];
+  }
+
+  if (response && typeof response === "object") {
+    const record = response as Record<string, unknown>;
+
+    if (Array.isArray(record.data)) {
+      return record.data as ProjectRecord[];
+    }
+
+    if (
+      record.data &&
+      typeof record.data === "object" &&
+      Array.isArray((record.data as Record<string, unknown>).data)
+    ) {
+      return (record.data as Record<string, unknown>)
+        .data as ProjectRecord[];
+    }
+
+    if (Array.isArray(record.projects)) {
+      return record.projects as ProjectRecord[];
+    }
+  }
+
+  return [];
 }
 
 function getErrorMessage(error: unknown): string {
   const apiError = error as ApiError;
 
   if (apiError.status === 401) {
-    return "Your session expired. Please login again.";
+    return "Your session expired. Please sign in again.";
   }
 
   if (apiError.status === 403) {
-    return apiError.message || "You do not have permission.";
+    return apiError.message || "You do not have permission for this action.";
   }
 
   if (apiError.status === 422) {
-    return apiError.message || "Validation failed. Please check the form.";
+    return apiError.message || "Validation failed. Check the project form.";
   }
 
-  return apiError.message || "Action failed. Please try again.";
+  return apiError.message || "The action could not be completed.";
 }
 
 function projectToForm(project: ProjectRecord): ProjectFormState {
@@ -293,16 +404,28 @@ function projectToForm(project: ProjectRecord): ProjectFormState {
     code: project.code || "",
     description: project.description || "",
     location_name: project.location_name || "",
-    latitude: project.latitude ? String(project.latitude) : "",
-    longitude: project.longitude ? String(project.longitude) : "",
+    latitude:
+      project.latitude !== null && project.latitude !== undefined
+        ? String(project.latitude)
+        : "",
+    longitude:
+      project.longitude !== null && project.longitude !== undefined
+        ? String(project.longitude)
+        : "",
     project_type:
-      (project.project_type as ProjectFormState["project_type"]) || "other",
-    status: (project.status as ProjectFormState["status"]) || "planned",
+      (project.project_type as ProjectFormState["project_type"]) ||
+      "other",
+    status:
+      (project.status as ProjectFormState["status"]) || "planned",
     security_level:
       (project.security_level as ProjectFormState["security_level"]) ||
       "internal",
-    start_date: project.start_date ? String(project.start_date).slice(0, 10) : "",
-    end_date: project.end_date ? String(project.end_date).slice(0, 10) : "",
+    start_date: project.start_date
+      ? String(project.start_date).slice(0, 10)
+      : "",
+    end_date: project.end_date
+      ? String(project.end_date).slice(0, 10)
+      : "",
   };
 }
 
@@ -320,61 +443,827 @@ function formToPayload(form: ProjectFormState) {
     start_date: form.start_date || null,
     end_date: form.end_date || null,
     metadata: {
-      progress: form.status === "completed" ? 100 : form.status === "active" ? 45 : 10,
       source: "dms_frontend",
       workflow: "project_first_document_management",
     },
   };
 }
 
+function validateProjectForm(form: ProjectFormState): string | null {
+  if (!form.name.trim()) {
+    return "Project name is required.";
+  }
+
+  if (form.start_date && form.end_date) {
+    const startDate = new Date(form.start_date);
+    const endDate = new Date(form.end_date);
+
+    if (endDate < startDate) {
+      return "The end date cannot be earlier than the start date.";
+    }
+  }
+
+  if (form.latitude.trim()) {
+    const latitude = Number(form.latitude);
+
+    if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
+      return "Latitude must be a number between -90 and 90.";
+    }
+  }
+
+  if (form.longitude.trim()) {
+    const longitude = Number(form.longitude);
+
+    if (
+      Number.isNaN(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return "Longitude must be a number between -180 and 180.";
+    }
+  }
+
+  return null;
+}
+
+function Header({
+  user,
+}: {
+  user: UserSummary | null;
+}) {
+  return (
+    <header className="flex min-h-[78px] shrink-0 items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 lg:px-8">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+          <span>Organization</span>
+          <ChevronRight size={13} />
+          <span className="text-slate-700">Projects</span>
+        </div>
+
+        <h1 className="mt-1 text-lg font-bold text-slate-900">
+          Projects & Sites
+        </h1>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        >
+          <Bell size={18} />
+          <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+        </button>
+
+        <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-xl px-1.5 py-1 transition hover:bg-slate-50"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+            {getInitials(getUserName(user))}
+          </div>
+
+          <div className="hidden text-left lg:block">
+            <p className="max-w-[150px] truncate text-sm font-semibold text-slate-800">
+              {getUserName(user)}
+            </p>
+
+            <p className="mt-0.5 max-w-[150px] truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {getRoleName(user)}
+            </p>
+          </div>
+
+          <ChevronDown
+            size={14}
+            className="hidden text-slate-400 lg:block"
+          />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function AlertBox({
+  alert,
+  onClose,
+}: {
+  alert: AlertState;
+  onClose?: () => void;
+}) {
+  const Icon =
+    alert.type === "success"
+      ? CheckCircle2
+      : alert.type === "error"
+      ? AlertCircle
+      : ShieldCheck;
+
+  const alertClass =
+    alert.type === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : alert.type === "error"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : "border-blue-200 bg-blue-50 text-blue-700";
+
+  return (
+    <div
+      className={cn(
+        "flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
+        alertClass
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <Icon size={17} className="mt-0.5 shrink-0" />
+        <span>{alert.message}</span>
+      </div>
+
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close alert"
+          className="shrink-0 opacity-70 transition hover:opacity-100"
+        >
+          <X size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  helper,
+  icon: Icon,
+}: {
+  title: string;
+  value: number;
+  helper: string;
+  icon: ElementType;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{title}</p>
+
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            {formatNumber(value)}
+          </p>
+
+          <p className="mt-2 text-[11px] text-slate-400">{helper}</p>
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon size={21} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+        {label}
+      </label>
+
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-10 w-full min-w-[160px] appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+        >
+          {options.map((option) => (
+            <option
+              key={option.value || option.label}
+              value={option.value}
+            >
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <ChevronDown
+          size={14}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({
+  project,
+  onEdit,
+  onDelete,
+}: {
+  project: ProjectRecord;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const visual = getProjectVisual(project);
+  const Icon = visual.icon;
+  const progress = getRecordedProgress(project);
+  const documentCount = getProjectDocumentsCount(project);
+
+  return (
+    <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+            visual.wrapperClass
+          )}
+        >
+          <Icon size={21} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate text-sm font-bold text-slate-900"
+            title={project.name}
+          >
+            {project.name}
+          </p>
+
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            {project.code || `Project #${project.id}`}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-blue-50 hover:text-blue-700"
+            aria-label={`Edit ${project.name}`}
+            title="Edit project"
+          >
+            <Edit3 size={14} />
+          </button>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+            aria-label={`Delete ${project.name}`}
+            title="Delete project"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <span
+          className={cn(
+            "rounded-full border px-2.5 py-1 text-[10px] font-bold",
+            getStatusClass(project.status)
+          )}
+        >
+          {getReadableStatus(project.status)}
+        </span>
+
+        <span
+          className={cn(
+            "rounded-full border px-2.5 py-1 text-[10px] font-bold",
+            getSecurityClass(project.security_level)
+          )}
+        >
+          {getReadableStatus(project.security_level)}
+        </span>
+      </div>
+
+      <p className="mt-4 line-clamp-2 min-h-10 text-xs leading-5 text-slate-500">
+        {project.description || "No project description has been added."}
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+        <div>
+          <p className="text-[10px] text-slate-400">Documents</p>
+
+          <p className="mt-1 flex items-center gap-1.5 text-sm font-bold text-slate-800">
+            <FileText size={13} className="text-blue-600" />
+            {formatNumber(documentCount)}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] text-slate-400">Project type</p>
+
+          <p className="mt-1 truncate text-xs font-semibold text-slate-700">
+            {getReadableStatus(project.project_type)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <MapPin size={13} className="shrink-0 text-slate-400" />
+
+          <span className="truncate">
+            {project.location_name || "No location"}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <CalendarDays size={13} className="shrink-0 text-slate-400" />
+
+          <span className="truncate">
+            {formatDate(project.start_date)} – {formatDate(project.end_date)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <Activity size={13} className="shrink-0 text-slate-400" />
+
+          <span>
+            Updated {formatRelativeTime(project.updated_at || project.created_at)}
+          </span>
+        </div>
+      </div>
+
+      {progress !== null && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-medium text-slate-500">
+              Recorded progress
+            </span>
+
+            <span className="font-bold text-slate-800">{progress}%</span>
+          </div>
+
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={cn("h-full rounded-full", visual.progressClass)}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <Link
+        to={`/Projects/${project.id}`}
+        className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white transition hover:bg-blue-700"
+      >
+        <Eye size={15} />
+        Open project
+      </Link>
+    </article>
+  );
+}
+
+function FormField({
+  label,
+  required = false,
+  children,
+  className,
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={cn("block", className)}>
+      <span className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+        {label}
+        {required && <span className="ml-1 text-red-500">*</span>}
+      </span>
+
+      {children}
+    </label>
+  );
+}
+
+function ProjectFormModal({
+  title,
+  form,
+  saving,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  form: ProjectFormState;
+  saving: boolean;
+  onChange: (form: ProjectFormState) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  function updateField<K extends keyof ProjectFormState>(
+    field: K,
+    value: ProjectFormState[K]
+  ): void {
+    onChange({
+      ...form,
+      [field]: value,
+    });
+  }
+
+  const inputClass =
+    "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50";
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+      <div className="max-h-full w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Add the project information used to organize documents.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+            aria-label="Close modal"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit}>
+          <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
+            <FormField label="Project name" required>
+              <input
+                value={form.name}
+                onChange={(event) =>
+                  updateField("name", event.target.value)
+                }
+                className={inputClass}
+                placeholder="Example: Kigali Geological Survey"
+              />
+            </FormField>
+
+            <FormField label="Project code">
+              <input
+                value={form.code}
+                onChange={(event) =>
+                  updateField("code", event.target.value)
+                }
+                className={inputClass}
+                placeholder="Leave empty for automatic code"
+              />
+            </FormField>
+
+            <FormField label="Project type">
+              <div className="relative">
+                <select
+                  value={form.project_type}
+                  onChange={(event) =>
+                    updateField(
+                      "project_type",
+                      event.target
+                        .value as ProjectFormState["project_type"]
+                    )
+                  }
+                  className={cn(inputClass, "appearance-none pr-9")}
+                >
+                  {projectTypeOptions
+                    .filter((option) => option.value)
+                    .map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                </select>
+
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+              </div>
+            </FormField>
+
+            <FormField label="Status">
+              <div className="relative">
+                <select
+                  value={form.status}
+                  onChange={(event) =>
+                    updateField(
+                      "status",
+                      event.target.value as ProjectFormState["status"]
+                    )
+                  }
+                  className={cn(inputClass, "appearance-none pr-9")}
+                >
+                  {statusOptions
+                    .filter((option) => option.value)
+                    .map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                </select>
+
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+              </div>
+            </FormField>
+
+            <FormField label="Security level">
+              <div className="relative">
+                <select
+                  value={form.security_level}
+                  onChange={(event) =>
+                    updateField(
+                      "security_level",
+                      event.target
+                        .value as ProjectFormState["security_level"]
+                    )
+                  }
+                  className={cn(inputClass, "appearance-none pr-9")}
+                >
+                  {securityOptions
+                    .filter((option) => option.value)
+                    .map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                </select>
+
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+              </div>
+            </FormField>
+
+            <FormField label="Location">
+              <input
+                value={form.location_name}
+                onChange={(event) =>
+                  updateField("location_name", event.target.value)
+                }
+                className={inputClass}
+                placeholder="Example: Kigali, Rwanda"
+              />
+            </FormField>
+
+            <FormField label="Latitude">
+              <input
+                value={form.latitude}
+                onChange={(event) =>
+                  updateField("latitude", event.target.value)
+                }
+                className={inputClass}
+                placeholder="-1.9441"
+                inputMode="decimal"
+              />
+            </FormField>
+
+            <FormField label="Longitude">
+              <input
+                value={form.longitude}
+                onChange={(event) =>
+                  updateField("longitude", event.target.value)
+                }
+                className={inputClass}
+                placeholder="30.0619"
+                inputMode="decimal"
+              />
+            </FormField>
+
+            <FormField label="Start date">
+              <input
+                type="date"
+                value={form.start_date}
+                onChange={(event) =>
+                  updateField("start_date", event.target.value)
+                }
+                className={inputClass}
+              />
+            </FormField>
+
+            <FormField label="End date">
+              <input
+                type="date"
+                value={form.end_date}
+                onChange={(event) =>
+                  updateField("end_date", event.target.value)
+                }
+                className={inputClass}
+              />
+            </FormField>
+
+            <FormField
+              label="Description"
+              className="md:col-span-2"
+            >
+              <textarea
+                value={form.description}
+                onChange={(event) =>
+                  updateField("description", event.target.value)
+                }
+                rows={4}
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                placeholder="Describe the project purpose and scope..."
+              />
+            </FormField>
+
+            <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck
+                  size={18}
+                  className="mt-0.5 shrink-0 text-blue-600"
+                />
+
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">
+                    Project-first document organization
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-blue-700">
+                    Save the project, then open its workspace to upload and
+                    manage related documents.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Save size={16} />
+              )}
+
+              {saving ? "Saving..." : "Save project"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={currentPage <= 1}
+        onClick={() => onChange(currentPage - 1)}
+        aria-label="Previous page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronLeft size={15} />
+      </button>
+
+      <span className="min-w-[78px] text-center text-xs font-semibold text-slate-600">
+        Page {currentPage} of {totalPages}
+      </span>
+
+      <button
+        type="button"
+        disabled={currentPage >= totalPages}
+        onClick={() => onChange(currentPage + 1)}
+        aria-label="Next page"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
+
+function LoadingPanel() {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center shadow-sm shadow-slate-200/40">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+        <Loader2 size={23} className="animate-spin" />
+      </div>
+
+      <p className="mt-4 text-sm font-semibold text-slate-700">
+        Loading projects
+      </p>
+
+      <p className="mt-1 text-xs text-slate-400">
+        Retrieving project information...
+      </p>
+    </div>
+  );
+}
+
+function EmptyPanel({
+  onCreate,
+}: {
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+        <FolderKanban size={26} />
+      </div>
+
+      <h3 className="mt-4 text-sm font-bold text-slate-800">
+        No projects found
+      </h3>
+
+      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">
+        Change the search filters or create the first project workspace.
+      </p>
+
+      <button
+        type="button"
+        onClick={onCreate}
+        className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+      >
+        <Plus size={16} />
+        Create project
+      </button>
+    </div>
+  );
+}
+
 export default function Projects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [selectedProject, setSelectedProject] = useState<ProjectRecord | null>(
-    null
-  );
+  const [user, setUser] = useState<UserSummary | null>(null);
 
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [projectType, setProjectType] = useState("");
-  const [securityLevel, setSecurityLevel] = useState("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const [status, setStatus] = useState<string>("");
+  const [projectType, setProjectType] = useState<string>("");
+  const [securityLevel, setSecurityLevel] = useState<string>("");
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
 
   const [alert, setAlert] = useState<AlertState | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<ProjectRecord | null>(
-    null
-  );
-  const [form, setForm] = useState<ProjectFormState>(emptyForm);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [editingProject, setEditingProject] =
+    useState<ProjectRecord | null>(null);
+  const [form, setForm] =
+    useState<ProjectFormState>(emptyForm);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
-  const filters = useMemo(() => {
-    return {
+  const apiFilters = useMemo(
+    () => ({
       search,
       status,
       project_type: projectType,
       security_level: securityLevel,
-    };
-  }, [search, status, projectType, securityLevel]);
+    }),
+    [projectType, search, securityLevel, status]
+  );
 
   async function loadProjects(): Promise<void> {
     try {
       setLoading(true);
       setErrorMessage("");
 
-      const data = (await getProjects(filters)) as unknown as ProjectRecord[];
+      const response = await getProjects(apiFilters);
+      const projectRows = normalizeProjectsResponse(response);
 
-      setProjects(data);
-
-      setSelectedProject((current) => {
-        if (!data.length) return null;
-        if (!current) return data[0];
-
-        return data.find((project) => project.id === current.id) || data[0];
-      });
+      setProjects(projectRows);
+      setCurrentPage(1);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -382,18 +1271,74 @@ export default function Projects() {
     }
   }
 
+  async function loadUser(): Promise<void> {
+    try {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  useEffect(() => {
+    loadUser();
+  }, []);
+
   useEffect(() => {
     loadProjects();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [apiFilters]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setSearch(searchInput.trim());
-    }, 400);
+    }, 350);
 
     return () => window.clearTimeout(timeout);
   }, [searchInput]);
+
+  const totalProjects = projects.length;
+
+  const activeProjects = projects.filter(
+    (project) => toLower(project.status) === "active"
+  ).length;
+
+  const completedProjects = projects.filter(
+    (project) => toLower(project.status) === "completed"
+  ).length;
+
+  const restrictedProjects = projects.filter(
+    (project) =>
+      toLower(project.security_level) === "restricted"
+  ).length;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(projects.length / PAGE_SIZE)
+  );
+
+  const safeCurrentPage = Math.min(
+    Math.max(currentPage, 1),
+    totalPages
+  );
+
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+
+  const paginatedProjects = projects.slice(
+    startIndex,
+    startIndex + PAGE_SIZE
+  );
+
+  const hasActiveFilters =
+    searchInput.trim() !== "" ||
+    status !== "" ||
+    projectType !== "" ||
+    securityLevel !== "";
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
 
   function openCreateModal(): void {
     setEditingProject(null);
@@ -407,13 +1352,25 @@ export default function Projects() {
     setIsModalOpen(true);
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+  function closeModal(): void {
+    if (saving) return;
+
+    setIsModalOpen(false);
+    setEditingProject(null);
+    setForm(emptyForm);
+  }
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> {
     event.preventDefault();
 
-    if (!form.name.trim()) {
+    const validationError = validateProjectForm(form);
+
+    if (validationError) {
       setAlert({
         type: "error",
-        message: "Project name is required.",
+        message: validationError,
       });
       return;
     }
@@ -423,7 +1380,10 @@ export default function Projects() {
       setAlert(null);
 
       if (editingProject) {
-        await updateProject(editingProject.id, formToPayload(form));
+        await updateProject(
+          editingProject.id,
+          formToPayload(form)
+        );
 
         setAlert({
           type: "success",
@@ -438,10 +1398,7 @@ export default function Projects() {
         });
       }
 
-      setIsModalOpen(false);
-      setEditingProject(null);
-      setForm(emptyForm);
-
+      closeModal();
       await loadProjects();
     } catch (error) {
       setAlert({
@@ -453,9 +1410,11 @@ export default function Projects() {
     }
   }
 
-  async function handleDeleteProject(project: ProjectRecord): Promise<void> {
+  async function handleDeleteProject(
+    project: ProjectRecord
+  ): Promise<void> {
     const confirmed = window.confirm(
-      `Are you sure you want to delete/archive "${project.name}"?`
+      `Delete or archive "${project.name}"?`
     );
 
     if (!confirmed) return;
@@ -479,893 +1438,245 @@ export default function Projects() {
     }
   }
 
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(
-    (project) => toLower(project.status) === "active"
-  ).length;
-  const completedProjects = projects.filter(
-    (project) => toLower(project.status) === "completed"
-  ).length;
-  const restrictedProjects = projects.filter(
-    (project) => toLower(project.security_level) === "restricted"
-  ).length;
-
-  return (
-    <>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            .custom-scrollbar::-webkit-scrollbar {
-              width: 6px;
-              height: 6px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb {
-              background: #2a2e3f;
-              border-radius: 10px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-              background: #3a3e52;
-            }
-            .project-form-input {
-              width: 100%;
-              border-radius: 0.75rem;
-              border: 1px solid #2a2e3f;
-              background: #0d0f17;
-              padding: 0.75rem 1rem;
-              font-size: 0.875rem;
-              color: white;
-              outline: none;
-              transition: all 0.2s ease;
-            }
-            .project-form-input:focus {
-              border-color: rgba(80, 81, 249, 0.65);
-              box-shadow: 0 0 0 2px rgba(80, 81, 249, 0.12);
-            }
-            .project-form-input::placeholder {
-              color: #64748b;
-            }
-          `,
-        }}
-      />
-
-      <div className="flex h-screen w-full overflow-hidden bg-[#13151b] font-sans text-slate-300 selection:bg-[#5051F9]/30">
-        <AdminSidebar />
-
-        <div className="relative flex h-full min-w-0 flex-1 flex-col">
-          <Header
-            searchInput={searchInput}
-            onSearchInputChange={setSearchInput}
-          />
-
-          <main className="custom-scrollbar relative flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-[1500px] p-8">
-              {alert && (
-                <AlertBox
-                  type={alert.type}
-                  message={alert.message}
-                  className="mb-5"
-                  onClose={() => setAlert(null)}
-                />
-              )}
-
-              {errorMessage && (
-                <AlertBox
-                  type="error"
-                  message={errorMessage}
-                  className="mb-5"
-                />
-              )}
-
-              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <SummaryCard
-                  title="Total Projects"
-                  value={String(totalProjects)}
-                  helper="All visible project records"
-                  icon={<FolderOpen size={18} />}
-                />
-
-                <SummaryCard
-                  title="Active Projects"
-                  value={String(activeProjects)}
-                  helper="Currently running sites"
-                  icon={<Activity size={18} />}
-                  tone="success"
-                />
-
-                <SummaryCard
-                  title="Completed"
-                  value={String(completedProjects)}
-                  helper="Finished / archived work"
-                  icon={<CheckCircle2 size={18} />}
-                  tone="info"
-                />
-
-                <SummaryCard
-                  title="Restricted"
-                  value={String(restrictedProjects)}
-                  helper="High security projects"
-                  icon={<ShieldCheck size={18} />}
-                  tone="danger"
-                />
-              </div>
-
-              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h1 className="mb-1.5 text-2xl font-bold tracking-tight text-white">
-                    Projects / Sites
-                  </h1>
-                  <p className="text-sm text-slate-400">
-                    Start with a project, then upload documents under that
-                    project.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                  <FilterSelect
-                    value={status}
-                    onChange={setStatus}
-                    options={statusOptions}
-                    icon={<Filter size={16} />}
-                  />
-
-                  <FilterSelect
-                    value={projectType}
-                    onChange={setProjectType}
-                    options={projectTypeOptions}
-                  />
-
-                  <FilterSelect
-                    value={securityLevel}
-                    onChange={setSecurityLevel}
-                    options={securityOptions}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={loadProjects}
-                    className="flex items-center justify-center gap-2 rounded-lg border border-[#2a2e3f] bg-[#1a1d27] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-white/5"
-                  >
-                    <RefreshCcw size={16} className="text-slate-400" />
-                    Refresh
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={openCreateModal}
-                    className="flex items-center justify-center gap-2 rounded-lg bg-[#5051F9] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#5051F9]/25 transition-colors hover:bg-[#4344e6]"
-                  >
-                    <Plus size={16} />
-                    New Project
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {loading ? (
-                  <LoadingPanel />
-                ) : projects.length === 0 ? (
-                  <EmptyPanel onCreate={openCreateModal} />
-                ) : (
-                  projects.map((project) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      selected={selectedProject?.id === project.id}
-                      onSelect={() => setSelectedProject(project)}
-                      onEdit={() => openEditModal(project)}
-                      onDelete={() => handleDeleteProject(project)}
-                    />
-                  ))
-                )}
-              </div>
-
-              <div className="mt-8 flex items-center justify-between pb-4">
-                <div className="text-xs font-medium text-slate-500">
-                  Showing {projects.length} project
-                  {projects.length === 1 ? "" : "s"}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#2a2e3f] bg-[#161923] text-slate-400 opacity-50 shadow-sm"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-
-                  <button
-                    type="button"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#5051F9] text-sm font-medium text-white shadow-md shadow-[#5051F9]/20"
-                  >
-                    1
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#2a2e3f] bg-[#161923] text-slate-400 opacity-50 shadow-sm"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </main>
-        </div>
-
-        {isModalOpen && (
-          <ProjectFormModal
-            title={editingProject ? "Update Project" : "Create Project"}
-            form={form}
-            saving={saving}
-            onChange={setForm}
-            onClose={() => {
-              setIsModalOpen(false);
-              setEditingProject(null);
-              setForm(emptyForm);
-            }}
-            onSubmit={handleSubmit}
-          />
-        )}
-      </div>
-    </>
-  );
-}
-
-function Header({
-  searchInput,
-  onSearchInputChange,
-}: {
-  searchInput: string;
-  onSearchInputChange: (value: string) => void;
-}) {
-  return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#1e2230] bg-[#13151b] px-8 text-sm">
-      <div className="flex items-center text-slate-400">
-        <span>Organization</span>
-        <span className="mx-2">/</span>
-        <span className="font-medium text-white">Projects</span>
-      </div>
-
-      <div className="flex items-center gap-6">
-        <div className="relative hidden w-72 md:block">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-          />
-
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(event) => onSearchInputChange(event.target.value)}
-            placeholder="Quick find project..."
-            className="w-full rounded-full border border-[#1e2230] bg-[#0d0f17] py-1.5 pl-9 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-[#5051F9]/50 focus:outline-none"
-          />
-        </div>
-
-        <button
-          type="button"
-          className="relative text-slate-400 transition-colors hover:text-white"
-        >
-          <Bell size={20} />
-          <span className="absolute right-0 top-0 h-2 w-2 rounded-full border border-[#13151b] bg-red-500" />
-        </button>
-
-        <div className="group flex cursor-pointer items-center gap-3">
-          <div className="hidden text-right sm:block">
-            <div className="text-sm font-medium leading-tight text-white">
-              DMS User
-            </div>
-            <div className="text-xs text-slate-500">
-              Document Management
-            </div>
-          </div>
-
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#2a2e3f] bg-[#5051F9]/20 text-xs font-semibold text-white transition-colors group-hover:border-slate-500">
-            DU
-          </div>
-
-          <ChevronDown
-            size={16}
-            className="text-slate-500 transition-colors group-hover:text-white"
-          />
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function ProjectCard({
-  project,
-  selected,
-  onSelect,
-  onEdit,
-  onDelete,
-}: {
-  project: ProjectRecord;
-  selected: boolean;
-  onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const iconConfig = getProjectIcon(project);
-  const Icon = iconConfig.Icon;
-  const progress = getProjectProgress(project);
-  const documentCount = getProjectDocumentsCount(project);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") onSelect();
-      }}
-      className={cn(
-        "group flex flex-col gap-5 rounded-2xl border bg-[#161923] p-5 transition-all duration-200 xl:flex-row xl:items-center",
-        selected
-          ? "border-[#5051F9]/60 shadow-lg shadow-[#5051F9]/10"
-          : "border-[#1e2230] hover:border-[#2a2e3f]"
-      )}
-    >
-      <div className="flex min-w-0 flex-1 items-start gap-4">
-        <div
-          className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/5 shadow-sm",
-            iconConfig.iconBg
-          )}
-        >
-          <Icon className={iconConfig.iconColor} size={24} strokeWidth={1.5} />
-        </div>
-
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="mb-1.5 flex flex-wrap items-center gap-3">
-            <h3 className="truncate text-base font-medium text-white transition-colors group-hover:text-white/90">
-              {project.name}
-            </h3>
-
-            <span
-              className={cn(
-                "rounded-md border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-                getStatusClass(project.status)
-              )}
-            >
-              {getReadableStatus(project.status)}
-            </span>
-
-            <span
-              className={cn(
-                "rounded-md border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-                getSecurityClass(project.security_level)
-              )}
-            >
-              {getReadableStatus(project.security_level)}
-            </span>
-          </div>
-
-          <p className="mb-3 truncate text-sm text-slate-400">
-            {project.description || "No project description provided."}
-          </p>
-
-          <div className="flex flex-wrap items-center gap-5 text-[13px] text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <Calendar size={14} className="opacity-70" />
-              <span>Started: {formatDate(project.start_date)}</span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <MapPin size={14} className="opacity-70" />
-              <span className="truncate">
-                {project.location_name || "No location"}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <FolderOpen size={14} className="opacity-70" />
-              <span>{project.code || "Auto code"}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex w-full shrink-0 flex-col justify-center border-white/5 xl:w-56 xl:border-l xl:pl-8">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs text-slate-400">Progress</span>
-          <span className="text-xs font-bold text-white">{progress}%</span>
-        </div>
-
-        <div
-          className={cn(
-            "mb-2 h-1.5 w-full overflow-hidden rounded-full",
-            iconConfig.progressBg
-          )}
-        >
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              iconConfig.progressColor
-            )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        <div className="truncate text-[11px] text-slate-500">
-          {toLower(project.status) === "archived"
-            ? "Archived"
-            : toLower(project.status) === "completed"
-            ? "Completed"
-            : project.end_date
-            ? `Estimated completion: ${formatDate(project.end_date)}`
-            : "No completion date"}
-        </div>
-      </div>
-
-      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-4 border-white/5 xl:w-[360px] xl:border-l xl:pl-4">
-        <div className="w-24 shrink-0 text-center">
-          <div className="mb-1 text-lg font-bold leading-none text-white">
-            {documentCount}
-          </div>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            Documents
-          </div>
-        </div>
-
-        <Link
-          to={`/Projects/${project.id}`}
-          onClick={(event) => event.stopPropagation()}
-          className="inline-flex w-[110px] items-center justify-center gap-2 rounded-lg border border-[#2a2e3f] bg-[#1a1d27] px-4 py-2.5 text-sm font-medium text-slate-300 shadow-sm transition-colors hover:bg-white/5 hover:text-white"
-        >
-          <Eye size={15} />
-          Open
-        </Link>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onEdit();
-          }}
-          className="rounded-lg border border-[#2a2e3f] bg-[#1a1d27] p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
-        >
-          <Edit3 size={16} />
-        </button>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-          className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-red-300 transition-colors hover:bg-red-500/20"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectFormModal({
-  title,
-  form,
-  saving,
-  onChange,
-  onClose,
-  onSubmit,
-}: {
-  title: string;
-  form: ProjectFormState;
-  saving: boolean;
-  onChange: (form: ProjectFormState) => void;
-  onClose: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  function updateField<K extends keyof ProjectFormState>(
-    field: K,
-    value: ProjectFormState[K]
-  ) {
-    onChange({
-      ...form,
-      [field]: value,
-    });
+  function clearFilters(): void {
+    setSearchInput("");
+    setSearch("");
+    setStatus("");
+    setProjectType("");
+    setSecurityLevel("");
+    setCurrentPage(1);
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-[#2a2e3f] bg-[#13151b] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#1e2230] px-6 py-5">
-          <div>
-            <h2 className="text-lg font-semibold text-white">{title}</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Create the project first, then upload documents under it.
-            </p>
-          </div>
+    <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
+      <AdminSidebar />
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-xl border border-[#2a2e3f] p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-60"
-          >
-            <X size={18} />
-          </button>
-        </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header user={user} />
 
-        <form
-          onSubmit={onSubmit}
-          className="custom-scrollbar max-h-[calc(92vh-84px)] overflow-y-auto p-6"
-        >
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <FormField label="Project Name" required>
-              <input
-                value={form.name}
-                onChange={(event) => updateField("name", event.target.value)}
-                className="project-form-input"
-                placeholder="e.g. Kigali Geological Survey"
+        <div className="custom-scrollbar flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
+            {alert && (
+              <AlertBox
+                alert={alert}
+                onClose={() => setAlert(null)}
               />
-            </FormField>
+            )}
 
-            <FormField label="Project Code">
-              <input
-                value={form.code}
-                onChange={(event) => updateField("code", event.target.value)}
-                className="project-form-input"
-                placeholder="Leave empty for auto code"
+            {errorMessage && (
+              <AlertBox
+                alert={{
+                  type: "error",
+                  message: errorMessage,
+                }}
               />
-            </FormField>
+            )}
 
-            <FormField label="Project Type">
-              <select
-                value={form.project_type}
-                onChange={(event) =>
-                  updateField(
-                    "project_type",
-                    event.target.value as ProjectFormState["project_type"]
-                  )
-                }
-                className="project-form-input"
-              >
-                {projectTypeOptions
-                  .filter((option) => option.value)
-                  .map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-              </select>
-            </FormField>
+            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Project Workspaces
+                </h2>
 
-            <FormField label="Status">
-              <select
-                value={form.status}
-                onChange={(event) =>
-                  updateField(
-                    "status",
-                    event.target.value as ProjectFormState["status"]
-                  )
-                }
-                className="project-form-input"
-              >
-                {statusOptions
-                  .filter((option) => option.value)
-                  .map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-              </select>
-            </FormField>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Create a project first, then organize its documents,
+                  security, search and reporting in one workspace.
+                </p>
+              </div>
 
-            <FormField label="Security Level">
-              <select
-                value={form.security_level}
-                onChange={(event) =>
-                  updateField(
-                    "security_level",
-                    event.target.value as ProjectFormState["security_level"]
-                  )
-                }
-                className="project-form-input"
-              >
-                {securityOptions
-                  .filter((option) => option.value)
-                  .map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-              </select>
-            </FormField>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadProjects}
+                  disabled={loading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCcw size={16} />
+                  )}
 
-            <FormField label="Location Name">
-              <input
-                value={form.location_name}
-                onChange={(event) =>
-                  updateField("location_name", event.target.value)
-                }
-                className="project-form-input"
-                placeholder="e.g. Kigali, Rwanda"
+                  Refresh
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
+                >
+                  <Plus size={17} />
+                  New project
+                </button>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                title="Total Projects"
+                value={totalProjects}
+                helper="Projects in the current result"
+                icon={FolderKanban}
               />
-            </FormField>
 
-            <FormField label="Latitude">
-              <input
-                value={form.latitude}
-                onChange={(event) => updateField("latitude", event.target.value)}
-                className="project-form-input"
-                placeholder="-1.9441"
+              <MetricCard
+                title="Active Projects"
+                value={activeProjects}
+                helper="Currently running workspaces"
+                icon={Activity}
               />
-            </FormField>
 
-            <FormField label="Longitude">
-              <input
-                value={form.longitude}
-                onChange={(event) => updateField("longitude", event.target.value)}
-                className="project-form-input"
-                placeholder="30.0619"
+              <MetricCard
+                title="Completed"
+                value={completedProjects}
+                helper="Projects marked completed"
+                icon={CheckCircle2}
               />
-            </FormField>
 
-            <FormField label="Start Date">
-              <input
-                type="date"
-                value={form.start_date}
-                onChange={(event) =>
-                  updateField("start_date", event.target.value)
-                }
-                className="project-form-input"
+              <MetricCard
+                title="Restricted"
+                value={restrictedProjects}
+                helper="High-security projects"
+                icon={ShieldCheck}
               />
-            </FormField>
+            </section>
 
-            <FormField label="End Date">
-              <input
-                type="date"
-                value={form.end_date}
-                onChange={(event) => updateField("end_date", event.target.value)}
-                className="project-form-input"
-              />
-            </FormField>
-          </div>
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                <div className="lg:col-span-5">
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+                    Search projects
+                  </label>
 
-          <FormField label="Description" className="mt-5">
-            <textarea
-              value={form.description}
-              onChange={(event) => updateField("description", event.target.value)}
-              rows={5}
-              className="project-form-input resize-none"
-              placeholder="Write project purpose, scope, site notes..."
-            />
-          </FormField>
+                  <div className="relative">
+                    <Search
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
 
-          <div className="mt-6 rounded-2xl border border-[#2a2e3f] bg-[#0d0f17] p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-              <ShieldCheck size={17} className="text-[#5051F9]" />
-              Project-first rule
-            </div>
+                    <input
+                      type="text"
+                      value={searchInput}
+                      onChange={(event) => {
+                        setSearchInput(event.target.value);
+                        setCurrentPage(1);
+                      }}
+                      placeholder="Name, code, location or description..."
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                    />
+                  </div>
+                </div>
 
-            <p className="text-sm leading-6 text-slate-400">
-              After saving this project, open the project workspace and upload
-              documents under this project. That keeps security scanning,
-              reports, access, and search organized by project.
-            </p>
-          </div>
+                <div className="lg:col-span-2">
+                  <SelectField
+                    label="Status"
+                    value={status}
+                    options={statusOptions}
+                    onChange={(value) => {
+                      setStatus(value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
 
-          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-xl border border-[#2a2e3f] px-5 py-3 text-sm text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-60"
-            >
-              Cancel
-            </button>
+                <div className="lg:col-span-3">
+                  <SelectField
+                    label="Project type"
+                    value={projectType}
+                    options={projectTypeOptions}
+                    onChange={(value) => {
+                      setProjectType(value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#5051F9] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#4344e6] disabled:opacity-60"
-            >
-              {saving ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save size={16} />
-                  Save Project
-                </>
+                <div className="lg:col-span-2">
+                  <SelectField
+                    label="Security"
+                    value={securityLevel}
+                    options={securityOptions}
+                    onChange={(value) => {
+                      setSecurityLevel(value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+                  >
+                    Clear all filters
+                  </button>
+                </div>
               )}
-            </button>
+            </section>
+
+            {loading ? (
+              <LoadingPanel />
+            ) : projects.length === 0 ? (
+              <EmptyPanel onCreate={openCreateModal} />
+            ) : (
+              <section>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {paginatedProjects.map((project) => (
+                    <ProjectCard
+                      key={String(project.id)}
+                      project={project}
+                      onEdit={() => openEditModal(project)}
+                      onDelete={() =>
+                        handleDeleteProject(project)
+                      }
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-slate-500">
+                    Showing{" "}
+                    <span className="font-semibold text-slate-700">
+                      {startIndex + 1}–
+                      {Math.min(
+                        startIndex + paginatedProjects.length,
+                        projects.length
+                      )}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-slate-700">
+                      {projects.length}
+                    </span>{" "}
+                    projects
+                  </p>
+
+                  <Pagination
+                    currentPage={safeCurrentPage}
+                    totalPages={totalPages}
+                    onChange={setCurrentPage}
+                  />
+                </div>
+              </section>
+            )}
           </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function AlertBox({
-  type,
-  message,
-  className = "",
-  onClose,
-}: {
-  type: AlertState["type"];
-  message: string;
-  className?: string;
-  onClose?: () => void;
-}) {
-  const style =
-    type === "success"
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-      : type === "error"
-      ? "border-red-500/20 bg-red-500/10 text-red-300"
-      : "border-blue-500/20 bg-blue-500/10 text-blue-300";
-
-  const Icon =
-    type === "success"
-      ? CheckCircle2
-      : type === "error"
-      ? AlertCircle
-      : ShieldCheck;
-
-  return (
-    <div
-      className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm ${style} ${className}`}
-    >
-      <div className="flex items-start gap-3">
-        <Icon size={18} className="mt-0.5 shrink-0" />
-        <span>{message}</span>
-      </div>
-
-      {onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 opacity-80"
-        >
-          <X size={16} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function FormField({
-  label,
-  required = false,
-  children,
-  className = "",
-}: {
-  label: string;
-  required?: boolean;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={`block ${className}`}>
-      <span className="mb-2 block text-sm text-slate-400">
-        {label} {required && <span className="text-red-400">*</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function FilterSelect({
-  value,
-  onChange,
-  options,
-  icon,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ label: string; value: string }>;
-  icon?: ReactNode;
-}) {
-  return (
-    <div className="relative">
-      {icon && (
-        <span className="absolute left-3 top-3 text-slate-500">{icon}</span>
-      )}
-
-      <select
-        value={value}
-        onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-          onChange(event.target.value)
-        }
-        className={`w-full rounded-lg border border-[#2a2e3f] bg-[#1a1d27] py-2.5 pr-4 text-sm text-white outline-none transition-colors focus:border-[#5051F9]/60 sm:w-52 ${
-          icon ? "pl-9" : "pl-3"
-        }`}
-      >
-        {options.map((option) => (
-          <option
-            key={option.value || option.label}
-            value={option.value}
-            className="bg-[#13151b]"
-          >
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  value,
-  helper,
-  icon,
-  tone = "default",
-}: {
-  title: string;
-  value: string;
-  helper: string;
-  icon: ReactNode;
-  tone?: "default" | "success" | "info" | "danger";
-}) {
-  const toneClass = {
-    default: "bg-[#5051F9]/10 text-[#8183ff] border-[#5051F9]/20",
-    success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-    info: "bg-purple-500/10 text-purple-300 border-purple-500/20",
-    danger: "bg-red-500/10 text-red-300 border-red-500/20",
-  }[tone];
-
-  return (
-    <div className="rounded-2xl border border-[#1e2230] bg-[#161923] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs text-slate-500">{title}</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-          <p className="mt-1 text-xs text-slate-600">{helper}</p>
         </div>
+      </main>
 
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${toneClass}`}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingPanel() {
-  return (
-    <div className="rounded-2xl border border-[#1e2230] bg-[#161923] p-10">
-      <div className="flex items-center justify-center gap-3 text-slate-400">
-        <Loader2 size={22} className="animate-spin" />
-        Loading projects...
-      </div>
-    </div>
-  );
-}
-
-function EmptyPanel({ onCreate }: { onCreate: () => void }) {
-  return (
-    <div className="rounded-2xl border border-[#1e2230] bg-[#161923] p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#5051F9]/10 text-[#8183ff]">
-        <FolderOpen size={26} />
-      </div>
-
-      <h3 className="text-lg font-semibold text-white">No projects found</h3>
-      <p className="mt-2 text-sm text-slate-500">
-        Create your first project before uploading documents.
-      </p>
-
-      <button
-        type="button"
-        onClick={onCreate}
-        className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#5051F9] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4344e6]"
-      >
-        <Plus size={16} />
-        New Project
-      </button>
+      {isModalOpen && (
+        <ProjectFormModal
+          title={
+            editingProject ? "Update Project" : "Create Project"
+          }
+          form={form}
+          saving={saving}
+          onChange={setForm}
+          onClose={closeModal}
+          onSubmit={handleSubmit}
+        />
+      )}
     </div>
   );
 }
