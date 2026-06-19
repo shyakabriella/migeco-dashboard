@@ -431,11 +431,53 @@ function getRoleSlug(user: DmsUser | null): string {
   return user?.role?.slug || "";
 }
 
-function isAdmin(user: DmsUser | null): boolean {
-  const slug = getRoleSlug(user).toLowerCase();
-  const roleName = user?.role?.name?.toLowerCase() || "";
+function normalizeRoleValue(value?: string | null): string {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
 
-  return slug === "admin" || roleName === "admin";
+function isAdmin(user: DmsUser | null): boolean {
+  if (!user) return false;
+
+  const roleId = Number(user.role?.id);
+  const slug = normalizeRoleValue(user.role?.slug);
+  const roleName = normalizeRoleValue(user.role?.name);
+  const permissions = user.role?.permissions || [];
+
+  /*
+  |--------------------------------------------------------------------------
+  | Robust frontend admin detection
+  |--------------------------------------------------------------------------
+  | The backend is still the final security gate through RegisterController.
+  | This only prevents the frontend from wrongly blocking a valid Admin user
+  | when the role is returned as Admin, administrator, super admin, role id 1,
+  | or with user-management permissions.
+  */
+  const adminAliases = new Set([
+    "admin",
+    "administrator",
+    "super_admin",
+    "system_admin",
+  ]);
+
+  const hasAdminPermission = permissions.some((permission) =>
+    [
+      "admin",
+      "manage_users",
+      "create_users",
+      "user_create",
+      "register_users",
+    ].includes(normalizeRoleValue(permission))
+  );
+
+  return (
+    roleId === 1 ||
+    adminAliases.has(slug) ||
+    adminAliases.has(roleName) ||
+    hasAdminPermission
+  );
 }
 
 function getStatusClass(status?: string | null): string {
@@ -1326,18 +1368,7 @@ export default function Usermanagement() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!canCreateUsers) {
-                      setAlert({
-                        type: "error",
-                        message:
-                          "Only an Admin account can create new users.",
-                      });
-                      return;
-                    }
-
-                    setShowAddModal(true);
-                  }}
+                  onClick={() => setShowAddModal(true)}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
                 >
                   <Plus size={17} />
