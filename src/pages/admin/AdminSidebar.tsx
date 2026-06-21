@@ -4,7 +4,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   Archive,
   BarChart3,
-  Bell,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -12,9 +11,7 @@ import {
   FolderOpen,
   LayoutDashboard,
   LogOut,
-  Mail,
   Map,
-  MapPin,
   Search,
   Settings,
   UploadCloud,
@@ -37,7 +34,7 @@ const LOGIN_PATH = "/login";
 
 const navigationSections: NavigationSection[] = [
   {
-    title: "Workspace",
+    title: "Overview",
     items: [
       {
         icon: LayoutDashboard,
@@ -45,23 +42,35 @@ const navigationSections: NavigationSection[] = [
         path: "/dashboard",
         activePaths: ["/dashboard", "/Mytasks", "/Recentactivity"],
       },
-      {
-        icon: FileText,
-        label: "Documents",
-        path: "/alldocuments",
-        activePaths: ["/alldocuments", "/mydocs", "/shareddocs", "/favorite"],
-      },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
       {
         icon: UploadCloud,
         label: "Upload Document",
         path: "/upload-document",
         activePaths: [
           "/upload-document",
+          "/upload-documents",
+          "/document-upload",
           "/upload&digitization",
           "/upload&digitization/bulk",
           "/upload&digitization/upload",
           "/upload&digitization/scan",
           "/upload&digitization/history",
+        ],
+      },
+      {
+        icon: FileText,
+        label: "All Documents",
+        path: "/alldocuments",
+        activePaths: [
+          "/alldocuments",
+          "/mydocs",
+          "/shareddocs",
+          "/favorite",
         ],
       },
       {
@@ -81,6 +90,51 @@ const navigationSections: NavigationSection[] = [
           "/SavedSearch",
         ],
       },
+    ],
+  },
+  {
+    title: "Field Operations",
+    items: [
+      {
+        icon: FolderOpen,
+        label: "Projects",
+        path: "/projects",
+        activePaths: [
+          "/projects",
+          "/Projects",
+          "/project-details",
+        ],
+      },
+      {
+        icon: Map,
+        label: "Study Areas",
+        path: "/study-areas",
+        activePaths: [
+          "/study-areas",
+          "/study-areas/maps",
+          "/study-areas/locations",
+          "/study-areas/fields",
+          "/maps",
+          "/locations",
+          "/fields",
+        ],
+      },
+      {
+        icon: FlaskConical,
+        label: "Samples & Laboratory",
+        path: "/samples-laboratory",
+        activePaths: [
+          "/samples-laboratory",
+          "/samples",
+          "/laboratory",
+          "/lab-results",
+        ],
+      },
+    ],
+  },
+  {
+    title: "Insights",
+    items: [
       {
         icon: BarChart3,
         label: "Reports",
@@ -98,48 +152,6 @@ const navigationSections: NavigationSection[] = [
     ],
   },
   {
-    title: "Projects & Field",
-    items: [
-      {
-        icon: FolderOpen,
-        label: "Projects",
-        path: "/projects",
-        activePaths: ["/projects", "/Projects", "/project-details"],
-      },
-      {
-        icon: Map,
-        label: "Study Areas",
-        path: "/study-areas",
-        activePaths: [
-          "/study-areas",
-          "/study-areas/maps",
-          "/study-areas/locations",
-          "/study-areas/fields",
-          "/maps",
-          "/locations",
-          "/fields",
-        ],
-      },
-      {
-        icon: MapPin,
-        label: "Maps & Locations",
-        path: "/study-areas/maps",
-        activePaths: ["/maps", "/locations", "/study-areas/maps"],
-      },
-      {
-        icon: FlaskConical,
-        label: "Samples & Laboratory",
-        path: "/samples-laboratory",
-        activePaths: [
-          "/samples-laboratory",
-          "/samples",
-          "/laboratory",
-          "/lab-results",
-        ],
-      },
-    ],
-  },
-  {
     title: "Management",
     items: [
       {
@@ -152,19 +164,18 @@ const navigationSections: NavigationSection[] = [
         icon: Settings,
         label: "Settings",
         path: "/settings",
-        activePaths: ["/settings"],
-      },
-      {
-        icon: Bell,
-        label: "Notifications",
-        path: "/settings/notifications",
-        activePaths: ["/settings/notifications", "/notifications"],
-      },
-      {
-        icon: Mail,
-        label: "Email Settings",
-        path: "/settings/email",
-        activePaths: ["/settings/email", "/email-settings"],
+        activePaths: [
+          "/settings",
+          "/settings/notifications",
+          "/settings/email",
+          "/notifications",
+          "/email-settings",
+          "/settings/docnumbering",
+          "/settings/integrations",
+          "/settings/backuprestore",
+          "/settings/storage",
+          "/settings/companyprofile",
+        ],
       },
     ],
   },
