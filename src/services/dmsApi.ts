@@ -124,6 +124,8 @@ export type DmsDocument = {
   document_category_id?: number | string | null;
   uploaded_by?: number | string | null;
   approved_by?: number | string | null;
+  archived_by?: number | string | null;
+  restored_by?: number | string | null;
 
   document_code?: string | null;
   title: string;
@@ -161,6 +163,11 @@ export type DmsDocument = {
   ai_status?: string | null;
   ai_sensitivity_level?: SecurityLevel | string | null;
 
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  restored_at?: string | null;
+  restore_reason?: string | null;
+
   tags?: string[] | string | null;
   metadata?: Record<string, unknown> | null;
 
@@ -168,6 +175,9 @@ export type DmsDocument = {
   category?: DocumentCategory | null;
   uploader?: UserSummary | null;
   approver?: UserSummary | null;
+  archiver?: UserSummary | null;
+  archiveRestorer?: UserSummary | null;
+  archive_restorer?: UserSummary | null;
   aiAnalysis?: DocumentAiAnalysis | null;
   aiSuggestedCategory?: DocumentCategory | null;
   aiAnalysisLogs?: AiAnalysisLog[];
@@ -194,6 +204,15 @@ export type DocumentFilters = {
   security_level?: SecurityLevel | string;
   status?: string;
   scan_status?: string;
+  search?: string;
+};
+
+export type DocumentArchiveFilters = {
+  project_id?: string | number;
+  document_category_id?: string | number;
+  archived_by?: string | number;
+  date_from?: string;
+  date_to?: string;
   search?: string;
 };
 
@@ -264,6 +283,10 @@ export type UpdateDocumentPayload = {
   security_level?: SecurityLevel;
   tags?: string[];
   metadata?: Record<string, unknown> | null;
+};
+
+export type ArchiveDocumentPayload = {
+  reason?: string | null;
 };
 
 /*
@@ -645,6 +668,30 @@ export type SandboxLog = {
   source?: string | null;
   document?: Partial<DmsDocument> | null;
   tester?: UserSummary | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type DocumentArchiveSummary = {
+  total_documents: number;
+  active_documents: number;
+  archived_documents: number;
+  archived_this_month: number;
+  restored_this_month: number;
+};
+
+export type DocumentArchiveLog = {
+  id?: number | string;
+  document_id?: number | string;
+  performed_by?: number | string | null;
+  action?: "archived" | "restored" | string | null;
+  status_before?: string | null;
+  status_after?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown> | null;
+  document?: Partial<DmsDocument> | null;
+  performer?: UserSummary | null;
   created_at?: string | null;
   updated_at?: string | null;
   [key: string]: unknown;
@@ -1293,6 +1340,76 @@ export async function deleteDocument(id: number | string): Promise<unknown> {
   );
 
   return unwrapLaravelData<unknown>(response);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Document Archives
+|--------------------------------------------------------------------------
+*/
+
+export async function getArchiveSummary(): Promise<DocumentArchiveSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<DocumentArchiveSummary> | DocumentArchiveSummary
+  >("/document-archives/summary", {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<DocumentArchiveSummary>(response);
+}
+
+export async function getArchivedDocuments(
+  filters?: DocumentArchiveFilters
+): Promise<DmsDocument[]> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<DmsDocument[]> | DmsDocument[]
+  >("/document-archives/documents", {
+    method: "GET",
+    query: filters,
+  });
+
+  return unwrapLaravelData<DmsDocument[]>(response);
+}
+
+export async function archiveDocument(
+  id: number | string,
+  payload: ArchiveDocumentPayload = {}
+): Promise<DmsDocument> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<DmsDocument> | DmsDocument
+  >(`/document-archives/documents/${id}/archive`, {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<DmsDocument>(response);
+}
+
+export async function restoreArchivedDocument(
+  id: number | string,
+  payload: ArchiveDocumentPayload = {}
+): Promise<DmsDocument> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<DmsDocument> | DmsDocument
+  >(`/document-archives/documents/${id}/restore`, {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<DmsDocument>(response);
+}
+
+export async function getArchiveLogs(
+  filters?: QueryParams
+): Promise<DocumentArchiveLog[]> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<DocumentArchiveLog[]> | DocumentArchiveLog[]
+  >("/document-archives/logs", {
+    method: "GET",
+    query: filters,
+  });
+
+  return unwrapLaravelData<DocumentArchiveLog[]>(response);
 }
 
 /*

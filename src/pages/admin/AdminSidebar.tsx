@@ -2,14 +2,22 @@ import { useState } from "react";
 import type { ElementType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  Archive,
   BarChart3,
-  Building2,
+  Bell,
   ChevronLeft,
   ChevronRight,
   FileText,
+  FlaskConical,
+  FolderOpen,
   LayoutDashboard,
   LogOut,
+  Mail,
+  Map,
+  MapPin,
   Search,
+  Settings,
+  UploadCloud,
   Users,
 } from "lucide-react";
 
@@ -41,12 +49,14 @@ const navigationSections: NavigationSection[] = [
         icon: FileText,
         label: "Documents",
         path: "/alldocuments",
+        activePaths: ["/alldocuments", "/mydocs", "/shareddocs", "/favorite"],
+      },
+      {
+        icon: UploadCloud,
+        label: "Upload Document",
+        path: "/upload-document",
         activePaths: [
-          "/alldocuments",
-          "/mydocs",
-          "/shareddocs",
-          "/favorite",
-          "/archive",
+          "/upload-document",
           "/upload&digitization",
           "/upload&digitization/bulk",
           "/upload&digitization/upload",
@@ -54,23 +64,12 @@ const navigationSections: NavigationSection[] = [
           "/upload&digitization/history",
         ],
       },
-      // {
-      //   icon: Building2,
-      //   label: "Organization",
-      //   path: "/organization",
-      //   activePaths: [
-      //     "/organization",
-      //     "/categories",
-      //     "/Docalltype",
-      //     "/organization/geological",
-      //     "/organization/geotechnical",
-      //     "/organization/construction",
-      //     "/Projects",
-      //     "/projects",
-      //     "/Department",
-      //     "/Tags",
-      //   ],
-      // },
+      {
+        icon: Archive,
+        label: "Archives",
+        path: "/archive",
+        activePaths: ["/archive", "/archives", "/document-archives"],
+      },
       {
         icon: Search,
         label: "Search & Retrieval",
@@ -99,6 +98,48 @@ const navigationSections: NavigationSection[] = [
     ],
   },
   {
+    title: "Projects & Field",
+    items: [
+      {
+        icon: FolderOpen,
+        label: "Projects",
+        path: "/projects",
+        activePaths: ["/projects", "/Projects", "/project-details"],
+      },
+      {
+        icon: Map,
+        label: "Study Areas",
+        path: "/study-areas",
+        activePaths: [
+          "/study-areas",
+          "/study-areas/maps",
+          "/study-areas/locations",
+          "/study-areas/fields",
+          "/maps",
+          "/locations",
+          "/fields",
+        ],
+      },
+      {
+        icon: MapPin,
+        label: "Maps & Locations",
+        path: "/study-areas/maps",
+        activePaths: ["/maps", "/locations", "/study-areas/maps"],
+      },
+      {
+        icon: FlaskConical,
+        label: "Samples & Laboratory",
+        path: "/samples-laboratory",
+        activePaths: [
+          "/samples-laboratory",
+          "/samples",
+          "/laboratory",
+          "/lab-results",
+        ],
+      },
+    ],
+  },
+  {
     title: "Management",
     items: [
       {
@@ -106,6 +147,24 @@ const navigationSections: NavigationSection[] = [
         label: "Users Management",
         path: "/usermanagement",
         activePaths: ["/usermanagement", "/users"],
+      },
+      {
+        icon: Settings,
+        label: "Settings",
+        path: "/settings",
+        activePaths: ["/settings"],
+      },
+      {
+        icon: Bell,
+        label: "Notifications",
+        path: "/settings/notifications",
+        activePaths: ["/settings/notifications", "/notifications"],
+      },
+      {
+        icon: Mail,
+        label: "Email Settings",
+        path: "/settings/email",
+        activePaths: ["/settings/email", "/email-settings"],
       },
     ],
   },
@@ -216,10 +275,7 @@ export default function AdminSidebar() {
 
       <nav className="custom-scrollbar flex-1 overflow-y-auto px-3 py-5">
         {navigationSections.map((section, sectionIndex) => (
-          <div
-            key={section.title}
-            className={sectionIndex > 0 ? "mt-7" : ""}
-          >
+          <div key={section.title} className={sectionIndex > 0 ? "mt-7" : ""}>
             {!collapsed && (
               <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
                 {section.title}
@@ -283,7 +339,7 @@ export default function AdminSidebar() {
               MIGECO Workspace
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Secure document management
+              Project, study area, and document records
             </p>
           </div>
         )}
@@ -300,9 +356,7 @@ export default function AdminSidebar() {
         >
           <LogOut className="h-[18px] w-[18px]" />
 
-          {!collapsed && (
-            <span className="text-sm font-semibold">Logout</span>
-          )}
+          {!collapsed && <span className="text-sm font-semibold">Logout</span>}
         </button>
       </div>
     </aside>

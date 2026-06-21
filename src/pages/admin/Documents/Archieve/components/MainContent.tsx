@@ -1,32 +1,44 @@
+import { useEffect, useMemo, useState } from "react";
 import FileIcon, { getExt } from "./FileIcon";
 
-const files = [
-  {
-    name: "Old_Survey_Draft_v1.pdf",
-    location: "/Projects/Alpha/Survey",
-    dateDeleted: "Oct 26, 2023",
-  },
-  {
-    name: "Temp_Field_Notes",
-    location: "/Personal/Temp",
-    dateDeleted: "Oct 20, 2023",
-  },
-  {
-    name: "Corrupted_Plan.dwg",
-    location: "/Projects/Beta/CAD",
-    dateDeleted: "Oct 15, 2023",
-  },
-  {
-    name: "Obsolete_Budget_2022.xlsx",
-    location: "/Finance/Archives",
-    dateDeleted: "Oct 05, 2023",
-  },
-  {
-    name: "Blurred_Site_Photo.jpg",
-    location: "/Projects/Alpha/Photos",
-    dateDeleted: "Sep 28, 2023",
-  },
-];
+type ArchivedDocument = {
+  id: number;
+  document_code?: string;
+  title?: string;
+  original_file_name?: string;
+  file_path?: string;
+  extension?: string;
+  file_size?: number;
+  status?: string;
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  project?: {
+    id: number;
+    name: string;
+    code?: string;
+  } | null;
+  category?: {
+    id: number;
+    name: string;
+    slug?: string;
+  } | null;
+  uploader?: {
+    id: number;
+    name: string;
+    email?: string;
+  } | null;
+  archiver?: {
+    id: number;
+    name: string;
+    email?: string;
+  } | null;
+};
+
+type ApiResponse<T> = {
+  success?: boolean;
+  data?: T;
+  message?: string;
+};
 
 type Props = {
   selectedFile: string | null;
@@ -35,128 +47,316 @@ type Props = {
   toggleCheck: (name: string) => void;
 };
 
-export default function MainContent({ selectedFile, setSelectedFile, checkedFiles, toggleCheck }: Props) {
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000/api";
+
+function getAuthToken(): string | null {
   return (
-    <div className="flex-1 flex flex-col overflow-auto bg-[#0f1117] px-6 py-4">
-      {/* Breadcrumb + actions */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-1 text-sm text-[#8b9bb4]">
-          <span className="hover:text-white cursor-pointer transition-colors">Home</span>
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    localStorage.getItem("token") ||
+    localStorage.getItem("auth_token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("access_token")
+  );
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function getDocumentName(document: ArchivedDocument): string {
+  return (
+    document.original_file_name ||
+    document.title ||
+    document.document_code ||
+    `Document #${document.id}`
+  );
+}
+
+function getOriginalLocation(document: ArchivedDocument): string {
+  const project = document.project?.name;
+  const category = document.category?.name;
+
+  if (project && category) {
+    return `/${project}/${category}`;
+  }
+
+  if (project) {
+    return `/${project}`;
+  }
+
+  if (category) {
+    return `/${category}`;
+  }
+
+  return document.file_path || "-";
+}
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getAuthToken();
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  const json = (await response.json().catch(() => ({}))) as ApiResponse<T>;
+
+  if (!response.ok) {
+    throw new Error(json.message || "Request failed.");
+  }
+
+  return json.data as T;
+}
+
+export default function MainContent({
+  selectedFile,
+  setSelectedFile,
+  checkedFiles,
+  toggleCheck,
+}: Props) {
+  const [documents, setDocuments] = useState<ArchivedDocument[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [restoring, setRestoring] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedIds = useMemo(
+    () => checkedFiles.map((id) => Number(id)).filter(Boolean),
+    [checkedFiles]
+  );
+
+  async function loadArchivedDocuments(): Promise<void> {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const data = await apiRequest<ArchivedDocument[]>(
+        "/document-archives/documents"
+      );
+
+      setDocuments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load archived documents."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function restoreSelectedDocuments(): Promise<void> {
+    if (selectedIds.length === 0) {
+      setError("Please select at least one archived document to restore.");
+      return;
+    }
+
+    try {
+      setRestoring(true);
+      setError(null);
+
+      await Promise.all(
+        selectedIds.map((id) =>
+          apiRequest(`/document-archives/documents/${id}/restore`, {
+            method: "POST",
+            body: JSON.stringify({
+              reason: "Document restored from archive.",
+            }),
+          })
+        )
+      );
+
+      await loadArchivedDocuments();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore document."
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  useEffect(() => {
+    loadArchivedDocuments();
+  }, []);
+
+  return (
+    <div className="flex flex-1 flex-col overflow-auto bg-white px-6 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-1 text-sm text-slate-500">
+          <span className="cursor-pointer transition-colors hover:text-slate-900">
+            Home
+          </span>
+
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
-          <span className="hover:text-white cursor-pointer transition-colors">Documents</span>
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+
+          <span className="cursor-pointer transition-colors hover:text-slate-900">
+            Documents
+          </span>
+
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
-          <span className="flex items-center gap-1.5 text-[#4f8ef7] font-medium">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
+
+          <span className="flex items-center gap-1.5 font-medium text-blue-600">
             Archive
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Info badge */}
-          <div className="flex items-center gap-1.5 bg-[#1a1507] border border-[#3d2e08] rounded-md px-3 py-1.5 text-xs text-[#e8b84b]">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="12" r="10" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" />
-            </svg>
-            Items are deleted after 30 days
+          <div className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
+            Archived documents are kept for audit
           </div>
 
-          {/* Restore button */}
-          <button className="flex items-center gap-1.5 bg-[#0d2d1a] border border-[#1a5c35] hover:bg-[#163d25] rounded-md px-3 py-1.5 text-xs text-[#3dba6f] font-medium transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Restore
+          <button
+            onClick={restoreSelectedDocuments}
+            disabled={restoring || selectedIds.length === 0}
+            className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {restoring ? "Restoring..." : "Restore"}
           </button>
 
-          {/* Delete Permanently button */}
-          <button className="flex items-center gap-1.5 bg-[#2d0f0f] border border-[#5c1a1a] hover:bg-[#3d1515] rounded-md px-3 py-1.5 text-xs text-[#e05252] font-medium transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+          <button
+            disabled
+            title="Permanent delete endpoint is not enabled in the archive backend yet."
+            className="flex cursor-not-allowed items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
+          >
             Delete Permanently
           </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-[#131720] border border-[#1e2330] rounded-xl overflow-hidden flex-1">
-        {/* Table header */}
-        <div className="grid grid-cols-[40px_1fr_200px_150px_50px] items-center px-4 py-3 border-b border-[#1e2330] text-xs text-[#8b9bb4] font-semibold uppercase tracking-wider">
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="grid grid-cols-[40px_1fr_200px_150px_50px] items-center border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
           <div>
-            <div className="w-4 h-4 border border-[#2a3145] rounded bg-[#1a1f2e]" />
+            <div className="h-4 w-4 rounded border border-slate-300 bg-white" />
           </div>
-          <div>NAME</div>
-          <div>ORIGINAL LOCATION</div>
-          <div>DATE DELETED</div>
+          <div>Name</div>
+          <div>Original Location</div>
+          <div>Archived Date</div>
           <div></div>
         </div>
 
-        {/* Table rows */}
-        {files.map((file) => {
-          const isSelected = selectedFile === file.name;
-          const isChecked = checkedFiles.includes(file.name);
-          const ext = getExt(file.name);
+        {loading && (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
+            Loading archived documents...
+          </div>
+        )}
 
-          return (
-            <div
-              key={file.name}
-              onClick={() => setSelectedFile(file.name)}
-              className={`grid grid-cols-[40px_1fr_200px_150px_50px] items-center px-4 py-3.5 border-b border-[#1e2330] cursor-pointer transition-colors
-                ${isSelected ? "bg-[#1a2035]" : "hover:bg-[#161b27]"}
-              `}
-            >
-              {/* Checkbox */}
-              <div onClick={(e) => { e.stopPropagation(); toggleCheck(file.name); }}>
+        {!loading && documents.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
+            No archived documents found.
+          </div>
+        )}
+
+        {!loading &&
+          documents.map((document) => {
+            const id = String(document.id);
+            const name = getDocumentName(document);
+            const isSelected = selectedFile === id;
+            const isChecked = checkedFiles.includes(id);
+            const ext = document.extension || getExt(name);
+
+            return (
+              <div
+                key={document.id}
+                onClick={() => setSelectedFile(id)}
+                className={`grid cursor-pointer grid-cols-[40px_1fr_200px_150px_50px] items-center border-b border-slate-100 px-4 py-3.5 transition-colors ${
+                  isSelected ? "bg-blue-50" : "hover:bg-slate-50"
+                }`}
+              >
                 <div
-                  className={`w-4 h-4 rounded flex items-center justify-center border transition-colors
-                    ${isChecked ? "bg-[#3b5bdb] border-[#3b5bdb]" : "border-[#2a3145] bg-[#1a1f2e]"}
-                  `}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCheck(id);
+                  }}
                 >
-                  {isChecked && (
-                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
+                  <div
+                    className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+                      isChecked
+                        ? "border-blue-600 bg-blue-600"
+                        : "border-slate-300 bg-white"
+                    }`}
+                  >
+                    {isChecked && (
+                      <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex min-w-0 items-center gap-3">
+                  <FileIcon ext={ext} />
+                  <span className={`truncate text-sm font-medium ${isSelected ? "text-blue-700" : "text-slate-800"}`}>
+                    {name}
+                  </span>
+                </div>
+
+                <div className="truncate text-sm text-slate-500">
+                  {getOriginalLocation(document)}
+                </div>
+
+                <div className="whitespace-pre-line text-sm text-slate-500">
+                  {formatDate(document.archived_at).replace(", ", ",\n")}
+                </div>
+
+                <div className="flex justify-center">
+                  <div className={`h-2.5 w-2.5 rounded-full ${isSelected ? "bg-blue-600" : "bg-slate-300"}`} />
                 </div>
               </div>
+            );
+          })}
 
-              {/* Name */}
-              <div className="flex items-center gap-3 min-w-0">
-                <FileIcon ext={ext} />
-                <span className={`text-sm font-medium truncate ${isSelected ? "text-white" : "text-[#c8d3e8]"}`}>
-                  {file.name}
-                </span>
-              </div>
+        <div className="flex items-center justify-between px-4 py-3.5 text-sm text-slate-500">
+          <span>
+            Showing {documents.length === 0 ? 0 : 1}-{documents.length} of{" "}
+            {documents.length} archived items
+          </span>
 
-              {/* Location */}
-              <div className="text-sm text-[#8b9bb4] truncate">{file.location}</div>
-
-              {/* Date */}
-              <div className="text-sm text-[#8b9bb4] whitespace-pre-line">{file.dateDeleted.replace(", ", ",\n")}</div>
-
-              {/* Status dot */}
-              <div className="flex justify-center">
-                <div className={`w-2.5 h-2.5 rounded-full ${isSelected ? "bg-[#3b5bdb]" : "bg-[#2a3145]"}`} />
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3.5 text-sm text-[#8b9bb4]">
-          <span>Showing 1-5 of 42 archived items</span>
           <div className="flex items-center gap-2">
-            <button className="px-3 py-1.5 bg-[#1a1f2e] border border-[#2a3145] rounded-md text-xs text-[#8b9bb4] hover:text-white hover:bg-[#202535] transition-colors">
+            <button
+              disabled
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400"
+            >
               Previous
             </button>
-            <button className="px-3 py-1.5 bg-[#1a1f2e] border border-[#2a3145] rounded-md text-xs text-[#8b9bb4] hover:text-white hover:bg-[#202535] transition-colors">
+            <button
+              disabled
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400"
+            >
               Next
             </button>
           </div>

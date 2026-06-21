@@ -38,6 +38,7 @@ import {
   analyzeDocumentWithAi,
   analyzePendingDocumentsWithAi,
   applyAiSuggestions,
+  archiveDocument,
   createDocumentCategory,
   encryptCleanDocuments,
   encryptDocument,
@@ -56,6 +57,7 @@ import {
   saveDocumentToDevice,
   verifyEncryptedDocument,
   rejectUnsafeSandboxDocument,
+  restoreArchivedDocument,
   scanDocument,
   scanPendingDocuments,
   testDocumentSandbox,
@@ -110,7 +112,9 @@ type DocumentAction =
   | "plaintext"
   | "encrypt"
   | "verify_encryption"
-  | "ai";
+  | "ai"
+  | "archive"
+  | "restore_archive";
 
 type BatchAction =
   | "scan_pending"
@@ -429,6 +433,22 @@ function getAccessUiState(document: DmsDocument): AccessUiState {
     badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
     iconClass: "text-emerald-600",
   };
+}
+
+function isArchivedDocument(document: DmsDocument): boolean {
+  return toLower(document.status) === "archived";
+}
+
+function canArchiveDocument(document: DmsDocument): boolean {
+  const status = toLower(document.status);
+  const scanStatus = toLower(document.scan_status);
+  const sandboxStatus = toLower(document.sandbox_status);
+
+  return (
+    status === "active" &&
+    scanStatus === "clean" &&
+    !["pending", "unsafe", "failed"].includes(sandboxStatus)
+  );
 }
 
 function isCleanDocument(document: DmsDocument): boolean {
@@ -981,6 +1001,66 @@ export default function Alldocuments() {
         return;
       }
 
+      if (action === "archive") {
+        if (isArchivedDocument(document)) {
+          setActionMessage({
+            type: "info",
+            message: "This document is already archived.",
+          });
+
+          return;
+        }
+
+        if (!canArchiveDocument(document)) {
+          setActionMessage({
+            type: "info",
+            message:
+              "Only active documents that passed antivirus scan can be archived. Unsafe, pending, rejected, quarantined, or infected documents must stay in the security workflow.",
+          });
+
+          return;
+        }
+
+        const updatedDocument = await archiveDocument(document.id, {
+          reason: "Document archived from document library.",
+        });
+
+        updateDocumentInState(updatedDocument);
+
+        setActionMessage({
+          type: "success",
+          message: "Document archived successfully.",
+        });
+
+        await loadDocuments();
+        return;
+      }
+
+      if (action === "restore_archive") {
+        if (!isArchivedDocument(document)) {
+          setActionMessage({
+            type: "info",
+            message: "Only archived documents can be restored.",
+          });
+
+          return;
+        }
+
+        const updatedDocument = await restoreArchivedDocument(document.id, {
+          reason: "Document restored from archive in document library.",
+        });
+
+        updateDocumentInState(updatedDocument);
+
+        setActionMessage({
+          type: "success",
+          message: "Archived document restored successfully.",
+        });
+
+        await loadDocuments();
+        return;
+      }
+
       if (action === "scan") {
         const scanUi = getScanUiState(document);
         const response = await scanDocument(document.id);
@@ -1382,6 +1462,7 @@ export default function Alldocuments() {
   const cleanDocuments = documents.filter(isCleanDocument).length;
   const pendingDocuments = documents.filter(isPendingDocument).length;
   const blockedDocuments = documents.filter(isBlockedDocument).length;
+  const archivedDocuments = documents.filter(isArchivedDocument).length;
 
   const encryptedDocuments = documents.filter((document) =>
     ["encrypted", "done", "completed", "yes"].includes(
@@ -1444,7 +1525,7 @@ export default function Alldocuments() {
               <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
                 <DocumentsPageTabs />
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:w-auto">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 2xl:w-auto">
                   <SummaryCard
                     title="Total"
                     value={String(totalDocuments)}
@@ -1474,6 +1555,13 @@ export default function Alldocuments() {
                     helper="Unsafe"
                     icon={<ShieldAlert size={16} />}
                     tone="danger"
+                  />
+
+                  <SummaryCard
+                    title="Archived"
+                    value={String(archivedDocuments)}
+                    helper="Inactive"
+                    icon={<ArchiveIcon size={16} />}
                   />
                 </div>
               </div>
@@ -2311,7 +2399,9 @@ function DocumentsTable({
                     </td>
 
                     <td className="px-4 py-3 text-xs text-slate-500">
-                      {formatDate(document.updated_at || document.created_at)}
+                      {isArchivedDocument(document)
+                        ? formatDate(document.archived_at || document.updated_at)
+                        : formatDate(document.updated_at || document.created_at)}
                     </td>
                   </tr>
                 );
@@ -2512,6 +2602,31 @@ function DocumentDetailsPanel({
           </div>
         </div>
 
+        <div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Archive
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {isArchivedDocument(selectedDocument) ? (
+              <DocumentActionButton
+                label="Restore"
+                icon={<RefreshCcw size={15} />}
+                loading={isActionLoading("restore_archive")}
+                onClick={() =>
+                  onDocumentAction(selectedDocument, "restore_archive")
+                }
+              />
+            ) : (
+              <DocumentActionButton
+                label="Archive"
+                icon={<ArchiveIcon size={15} />}
+                loading={isActionLoading("archive")}
+                onClick={() => onDocumentAction(selectedDocument, "archive")}
+              />
+            )}
+          </div>
+        </div>
+
         <details className="group rounded-xl border border-slate-200">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-700">
             Access Control
@@ -2658,9 +2773,26 @@ function DocumentDetailsPanel({
               value={selectedDocument.uploader?.name || "—"}
             />
             <DetailRow
+              label="Status"
+              value={getReadableStatus(selectedDocument.status)}
+            />
+            <DetailRow
               label="Modified"
               value={formatDate(selectedDocument.updated_at)}
             />
+
+            {isArchivedDocument(selectedDocument) && (
+              <>
+                <DetailRow
+                  label="Archived At"
+                  value={formatDate(selectedDocument.archived_at)}
+                />
+                <DetailRow
+                  label="Archive Reason"
+                  value={selectedDocument.archive_reason || "—"}
+                />
+              </>
+            )}
 
             {selectedDocument.description && (
               <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">

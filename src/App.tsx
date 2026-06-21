@@ -10,6 +10,10 @@ import SharedLinks from "./pages/admin/accessandpermissions/sharedlinks/sharedli
 import Dashboard from "./pages/admin/Dashboard/Overview";
 import Mytask from "./pages/admin/Dashboard/mytasks";
 import Recent from "./pages/admin/Dashboard/Recent";
+import StudyAreasPage from "./pages/admin/Dashboard/StudyAreasPage";
+import SampleLaboratoryPage from "./pages/admin/Dashboard/SampleLaboratoryPage";
+import SettingsManagementPage from "./pages/admin/Dashboard/SettingsManagementPage";
+import UploadDocumentPage from "./pages/admin/Dashboard/UploadDocumentPage";
 
 import Audittrail from "./pages/admin/Audit&logs/audittrail/audittrail";
 import LoginHistory from "./pages/admin/Audit&logs/Loginhistory/loginhistory";
@@ -52,7 +56,6 @@ import Smartsearch from "./pages/admin/Search/Smartsearch";
 import Docnumbering from "./pages/admin/Settings/Docnumbering";
 import Integrations from "./pages/admin/Settings/intergrations";
 import Backup from "./pages/admin/Settings/backup/Backup";
-import Notifications from "./pages/admin/Settings/Notifications";
 import Storage from "./pages/admin/Settings/Storage";
 import Companyprofile from "./pages/admin/Settings/Companyprofile";
 
@@ -82,6 +85,53 @@ export const App = () => {
         <Route path="/Mytasks" element={<Mytask />} />
         <Route path="/Recentactivity" element={<Recent />} />
 
+        {/* Study Areas */}
+        <Route path="/study-areas" element={<StudyAreasPage />} />
+        <Route path="/study-areas/maps" element={<StudyAreasPage />} />
+        <Route path="/study-areas/locations" element={<StudyAreasPage />} />
+        <Route path="/study-areas/fields" element={<StudyAreasPage />} />
+        <Route
+          path="/maps"
+          element={<Navigate to="/study-areas/maps" replace />}
+        />
+        <Route
+          path="/locations"
+          element={<Navigate to="/study-areas/locations" replace />}
+        />
+        <Route
+          path="/fields"
+          element={<Navigate to="/study-areas/fields" replace />}
+        />
+
+        {/* Samples & Laboratory */}
+        <Route
+          path="/samples-laboratory"
+          element={<SampleLaboratoryPage />}
+        />
+        <Route
+          path="/samples"
+          element={<SampleLaboratoryPage />}
+        />
+        <Route
+          path="/laboratory"
+          element={<SampleLaboratoryPage />}
+        />
+        <Route
+          path="/lab-results"
+          element={<SampleLaboratoryPage />}
+        />
+
+        {/* Upload Document */}
+        <Route path="/upload-document" element={<UploadDocumentPage />} />
+        <Route
+          path="/upload-documents"
+          element={<Navigate to="/upload-document" replace />}
+        />
+        <Route
+          path="/document-upload"
+          element={<Navigate to="/upload-document" replace />}
+        />
+
         {/* Access & permissions - hidden from sidebar but routes still work */}
         <Route path="/access" element={<Access />} />
         <Route path="/role" element={<Roles />} />
@@ -104,10 +154,7 @@ export const App = () => {
         {/* Help & support */}
         <Route path="/helpandsupport/faqs" element={<FAQs />} />
         <Route path="/helpandsupport/manual" element={<Manual />} />
-        <Route
-          path="/helpandsupport/submitticket"
-          element={<SubmitTicket />}
-        />
+        <Route path="/helpandsupport/submitticket" element={<SubmitTicket />} />
 
         {/* Organization main route */}
         <Route path="/organization" element={<Organization />} />
@@ -159,15 +206,19 @@ export const App = () => {
         <Route path="/reports/uploadrep" element={<Uploadrep />} />
 
         {/* Settings */}
+        <Route path="/settings" element={<SettingsManagementPage />} />
+        <Route
+          path="/settings/notifications"
+          element={<SettingsManagementPage />}
+        />
+        <Route path="/settings/email" element={<SettingsManagementPage />} />
+        <Route path="/notifications" element={<SettingsManagementPage />} />
+        <Route path="/email-settings" element={<SettingsManagementPage />} />
         <Route path="/settings/docnumbering" element={<Docnumbering />} />
         <Route path="/settings/integrations" element={<Integrations />} />
         <Route path="/settings/backuprestore" element={<Backup />} />
-        <Route path="/settings/notifications" element={<Notifications />} />
         <Route path="/settings/storage" element={<Storage />} />
-        <Route
-          path="/settings/companyprofile"
-          element={<Companyprofile />}
-        />
+        <Route path="/settings/companyprofile" element={<Companyprofile />} />
 
         {/* Upload & digitization main route */}
         <Route path="/upload&digitization" element={<Bulk />} />
