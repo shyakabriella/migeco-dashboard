@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ElementType, FormEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ElementType,
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
   AlertCircle,
+  Archive,
+  BarChart3,
   Bell,
   Building2,
   CalendarDays,
@@ -14,6 +21,7 @@ import {
   Edit3,
   Eye,
   FileText,
+  FlaskConical,
   FolderKanban,
   FolderOpen,
   Loader2,
@@ -27,6 +35,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  UploadCloud,
   X,
 } from "lucide-react";
 
@@ -36,11 +45,17 @@ import {
   createProject,
   deleteProject,
   getCurrentUser,
+  getDocuments,
+  getProjectRecords,
   getProjects,
   updateProject,
 } from "../../../../services/dmsApi";
 
-import type { UserSummary } from "../../../../services/dmsApi";
+import type {
+  DmsDocument,
+  ProjectRecordsResponse,
+  UserSummary,
+} from "../../../../services/dmsApi";
 
 type ApiError = Error & {
   status?: number;
@@ -74,8 +89,20 @@ type ProjectRecord = {
   } | null;
   documents_count?: number;
   document_count?: number;
+  related_counts?: ProjectRelatedCounts | null;
   documents?: unknown[];
   metadata?: Record<string, unknown> | null;
+};
+
+type ProjectRelatedCounts = {
+  documents?: number | string | null;
+  active_documents?: number | string | null;
+  archived_documents?: number | string | null;
+  study_area_records?: number | string | null;
+  sample_records?: number | string | null;
+  laboratory_records?: number | string | null;
+  geological_records?: number | string | null;
+  security_alerts?: number | string | null;
 };
 
 type ProjectFormState = {
@@ -101,6 +128,27 @@ type ProjectFormState = {
 type SelectOption = {
   label: string;
   value: string;
+};
+
+type RelatedRecordSummary = {
+  documents: number;
+  activeDocuments: number;
+  archivedDocuments: number;
+  studyAreas: number;
+  maps: number;
+  samples: number;
+  laboratory: number;
+  geologicalRecords: number;
+  securityAlerts: number;
+  lastActivity: string | null;
+};
+
+type RelatedRecordTile = {
+  key: keyof RelatedRecordSummary;
+  label: string;
+  helper: string;
+  icon: ElementType;
+  path: (project: ProjectRecord) => string;
 };
 
 const PAGE_SIZE = 6;
@@ -145,12 +193,581 @@ const securityOptions: SelectOption[] = [
   { label: "Restricted", value: "restricted" },
 ];
 
+const relatedRecordTiles: RelatedRecordTile[] = [
+  {
+    key: "documents",
+    label: "Documents",
+    helper: "Reports, drawings, files",
+    icon: FileText,
+    path: (project) => `/alldocuments?project_id=${project.id}`,
+  },
+  {
+    key: "studyAreas",
+    label: "Study Areas",
+    helper: "Locations and field areas",
+    icon: MapPin,
+    path: (project) => `/study-areas?project_id=${project.id}`,
+  },
+  {
+    key: "samples",
+    label: "Samples",
+    helper: "Field and rock samples",
+    icon: FlaskConical,
+    path: (project) => `/samples-laboratory?project_id=${project.id}`,
+  },
+  {
+    key: "laboratory",
+    label: "Laboratory",
+    helper: "Lab results and assays",
+    icon: Activity,
+    path: (project) => `/laboratory?project_id=${project.id}`,
+  },
+  {
+    key: "geologicalRecords",
+    label: "Geological",
+    helper: "Structured geo records",
+    icon: Mountain,
+    path: (project) => `/geological-records?project_id=${project.id}`,
+  },
+  {
+    key: "archivedDocuments",
+    label: "Archive",
+    helper: "Archived project records",
+    icon: Archive,
+    path: (project) => `/archive?project_id=${project.id}`,
+  },
+];
+
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
+type LocationPreset = MapCoordinate & {
+  label: string;
+};
+
+type MapDragState = {
+  startClientX: number;
+  startClientY: number;
+  startCenterPixel: PixelPoint;
+  moved: boolean;
+};
+
+type PixelPoint = {
+  x: number;
+  y: number;
+};
+
+type TileRenderItem = {
+  key: string;
+  url: string;
+  left: number;
+  top: number;
+};
+
+const TILE_SIZE = 256;
+const DEFAULT_MAP_ZOOM = 9;
+const MIN_MAP_ZOOM = 6;
+const MAX_MAP_ZOOM = 18;
+
+const DEFAULT_MAP_CENTER: MapCoordinate = {
+  latitude: -1.9403,
+  longitude: 29.8739,
+};
+
+const LOCATION_PRESETS: LocationPreset[] = [
+  { label: "Kigali", latitude: -1.9441, longitude: 30.0619 },
+  { label: "Musanze", latitude: -1.4998, longitude: 29.6347 },
+  { label: "Rubavu", latitude: -1.6792, longitude: 29.2611 },
+  { label: "Huye", latitude: -2.5967, longitude: 29.7394 },
+  { label: "Nyagatare", latitude: -1.2915, longitude: 30.3271 },
+];
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseCoordinate(value: string): number | null {
+  if (!value.trim()) return null;
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatCoordinate(value: number): string {
+  return value.toFixed(6);
+}
+
+function normalizeLongitude(longitude: number): number {
+  let normalized = longitude;
+
+  while (normalized < -180) normalized += 360;
+  while (normalized > 180) normalized -= 360;
+
+  return normalized;
+}
+
+function latLngToWorldPixel(
+  coordinate: MapCoordinate,
+  zoom: number
+): PixelPoint {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const latitude = clampNumber(coordinate.latitude, -85.05112878, 85.05112878);
+  const longitude = normalizeLongitude(coordinate.longitude);
+  const sinLatitude = Math.sin((latitude * Math.PI) / 180);
+
+  return {
+    x: ((longitude + 180) / 360) * scale,
+    y:
+      (0.5 -
+        Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) *
+      scale,
+  };
+}
+
+function worldPixelToLatLng(pixel: PixelPoint, zoom: number): MapCoordinate {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const longitude = normalizeLongitude((pixel.x / scale) * 360 - 180);
+  const n = Math.PI - (2 * Math.PI * pixel.y) / scale;
+  const latitude = (180 / Math.PI) * Math.atan(Math.sinh(n));
+
+  return {
+    latitude: clampNumber(latitude, -85.05112878, 85.05112878),
+    longitude,
+  };
+}
+
+function getSafeSelectedCoordinate(
+  latitude: string,
+  longitude: string
+): MapCoordinate | null {
+  const parsedLatitude = parseCoordinate(latitude);
+  const parsedLongitude = parseCoordinate(longitude);
+
+  if (parsedLatitude === null || parsedLongitude === null) {
+    return null;
+  }
+
+  if (
+    parsedLatitude < -90 ||
+    parsedLatitude > 90 ||
+    parsedLongitude < -180 ||
+    parsedLongitude > 180
+  ) {
+    return null;
+  }
+
+  return {
+    latitude: parsedLatitude,
+    longitude: parsedLongitude,
+  };
+}
+
+function buildMapTiles(
+  center: MapCoordinate,
+  zoom: number,
+  size: { width: number; height: number }
+): {
+  topLeft: PixelPoint;
+  tiles: TileRenderItem[];
+} {
+  const centerPixel = latLngToWorldPixel(center, zoom);
+  const topLeft = {
+    x: centerPixel.x - size.width / 2,
+    y: centerPixel.y - size.height / 2,
+  };
+
+  const totalTiles = 2 ** zoom;
+  const startTileX = Math.floor(topLeft.x / TILE_SIZE) - 1;
+  const endTileX = Math.floor((topLeft.x + size.width) / TILE_SIZE) + 1;
+  const startTileY = Math.floor(topLeft.y / TILE_SIZE) - 1;
+  const endTileY = Math.floor((topLeft.y + size.height) / TILE_SIZE) + 1;
+  const tiles: TileRenderItem[] = [];
+
+  for (let tileX = startTileX; tileX <= endTileX; tileX += 1) {
+    for (let tileY = startTileY; tileY <= endTileY; tileY += 1) {
+      if (tileY < 0 || tileY >= totalTiles) continue;
+
+      const wrappedTileX = ((tileX % totalTiles) + totalTiles) % totalTiles;
+
+      tiles.push({
+        key: `${zoom}-${tileX}-${tileY}`,
+        url: `https://tile.openstreetmap.org/${zoom}/${wrappedTileX}/${tileY}.png`,
+        left: tileX * TILE_SIZE - topLeft.x,
+        top: tileY * TILE_SIZE - topLeft.y,
+      });
+    }
+  }
+
+  return {
+    topLeft,
+    tiles,
+  };
+}
+
+function LocationMapPicker({
+  latitude,
+  longitude,
+  onSelect,
+  onClear,
+}: {
+  latitude: string;
+  longitude: string;
+  onSelect: (latitude: number, longitude: number, label?: string) => void;
+  onClear: () => void;
+}) {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<MapDragState | null>(null);
+  const selectedCoordinate = getSafeSelectedCoordinate(latitude, longitude);
+
+  const [center, setCenter] = useState<MapCoordinate>(
+    selectedCoordinate || DEFAULT_MAP_CENTER
+  );
+  const [zoom, setZoom] = useState<number>(DEFAULT_MAP_ZOOM);
+  const [mapSize, setMapSize] = useState({
+    width: 720,
+    height: 320,
+  });
+  const [locationMessage, setLocationMessage] = useState<string>("");
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedCoordinate) {
+      setCenter(selectedCoordinate);
+    }
+  }, [latitude, longitude]);
+
+  useEffect(() => {
+    const mapElement = mapRef.current;
+
+    if (!mapElement) return undefined;
+
+    function updateSize(): void {
+      const rect = mapElement.getBoundingClientRect();
+
+      setMapSize({
+        width: Math.max(280, rect.width),
+        height: Math.max(260, rect.height),
+      });
+    }
+
+    updateSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateSize);
+
+      return () => window.removeEventListener("resize", updateSize);
+    }
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(mapElement);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const mapLayout = useMemo(
+    () => buildMapTiles(center, zoom, mapSize),
+    [center, mapSize, zoom]
+  );
+
+  const selectedPixel = useMemo(() => {
+    if (!selectedCoordinate) return null;
+
+    const worldPixel = latLngToWorldPixel(selectedCoordinate, zoom);
+
+    return {
+      x: worldPixel.x - mapLayout.topLeft.x,
+      y: worldPixel.y - mapLayout.topLeft.y,
+    };
+  }, [mapLayout.topLeft.x, mapLayout.topLeft.y, selectedCoordinate, zoom]);
+
+  function selectCoordinate(
+    coordinate: MapCoordinate,
+    label?: string
+  ): void {
+    const safeCoordinate = {
+      latitude: clampNumber(coordinate.latitude, -90, 90),
+      longitude: normalizeLongitude(coordinate.longitude),
+    };
+
+    setCenter(safeCoordinate);
+    setLocationMessage(label ? `${label} selected.` : "Location selected from map.");
+    onSelect(safeCoordinate.latitude, safeCoordinate.longitude, label);
+  }
+
+  function handlePointerDown(
+    event: ReactPointerEvent<HTMLDivElement>
+  ): void {
+    const centerPixel = latLngToWorldPixel(center, zoom);
+
+    dragRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startCenterPixel: centerPixel,
+      moved: false,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(
+    event: ReactPointerEvent<HTMLDivElement>
+  ): void {
+    const drag = dragRef.current;
+
+    if (!drag) return;
+
+    const deltaX = event.clientX - drag.startClientX;
+    const deltaY = event.clientY - drag.startClientY;
+
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 4) {
+      drag.moved = true;
+    }
+
+    const nextCenterPixel = {
+      x: drag.startCenterPixel.x - deltaX,
+      y: drag.startCenterPixel.y - deltaY,
+    };
+
+    setCenter(worldPixelToLatLng(nextCenterPixel, zoom));
+  }
+
+  function handlePointerUp(
+    event: ReactPointerEvent<HTMLDivElement>
+  ): void {
+    const drag = dragRef.current;
+    dragRef.current = null;
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer may already be released by the browser.
+    }
+
+    if (drag?.moved) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedPixel = {
+      x: mapLayout.topLeft.x + event.clientX - rect.left,
+      y: mapLayout.topLeft.y + event.clientY - rect.top,
+    };
+
+    selectCoordinate(worldPixelToLatLng(clickedPixel, zoom));
+  }
+
+  function handlePointerCancel(): void {
+    dragRef.current = null;
+  }
+
+  function handleZoomIn(): void {
+    setZoom((current) => Math.min(MAX_MAP_ZOOM, current + 1));
+  }
+
+  function handleZoomOut(): void {
+    setZoom((current) => Math.max(MIN_MAP_ZOOM, current - 1));
+  }
+
+  function handleUseBrowserLocation(): void {
+    setLocationMessage("");
+
+    if (!navigator.geolocation) {
+      setLocationMessage("Browser location is not supported. Click the map instead.");
+      return;
+    }
+
+    setIsLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setIsLocating(false);
+        selectCoordinate(
+          {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          },
+          "Current browser location"
+        );
+      },
+      () => {
+        setIsLocating(false);
+        setLocationMessage(
+          "Could not read browser location. Click the map or choose a preset."
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+  }
+
+  function handleClearLocation(): void {
+    setCenter(DEFAULT_MAP_CENTER);
+    setLocationMessage("Location cleared.");
+    onClear();
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-slate-900">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">
+              <MapPin size={17} />
+            </div>
+            <div>
+              <p className="text-sm font-bold">Select project location on map</p>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                Click a point to set latitude and longitude automatically. Drag the map to move it.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleUseBrowserLocation}
+            disabled={isLocating}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLocating ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <MapPin size={14} />
+            )}
+            Use current location
+          </button>
+
+          <button
+            type="button"
+            onClick={handleClearLocation}
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {LOCATION_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => selectCoordinate(preset, preset.label)}
+            className="inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        ref={mapRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        className="relative mt-4 h-[320px] select-none overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 shadow-inner touch-none cursor-crosshair"
+      >
+        {mapLayout.tiles.map((tile) => (
+          <img
+            key={tile.key}
+            src={tile.url}
+            alt=""
+            draggable={false}
+            className="pointer-events-none absolute h-64 w-64 select-none"
+            style={{
+              left: tile.left,
+              top: tile.top,
+            }}
+          />
+        ))}
+
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/0 via-white/0 to-slate-900/10" />
+
+        {selectedPixel &&
+          selectedPixel.x >= -30 &&
+          selectedPixel.x <= mapSize.width + 30 &&
+          selectedPixel.y >= -40 &&
+          selectedPixel.y <= mapSize.height + 40 && (
+            <div
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-full"
+              style={{
+                left: selectedPixel.x,
+                top: selectedPixel.y,
+              }}
+            >
+              <div className="relative flex flex-col items-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl shadow-blue-900/30 ring-4 ring-white">
+                  <MapPin size={21} fill="currentColor" />
+                </div>
+                <div className="h-4 w-1 rounded-full bg-blue-600" />
+              </div>
+            </div>
+          )}
+
+        <div
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="flex h-9 w-9 items-center justify-center text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700"
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          <div className="h-px bg-slate-200" />
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="flex h-9 w-9 items-center justify-center text-lg font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700"
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+        </div>
+
+        <div className="absolute bottom-3 left-3 max-w-[calc(100%-24px)] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-sm backdrop-blur">
+          {selectedCoordinate ? (
+            <span>
+              Selected: {formatCoordinate(selectedCoordinate.latitude)}, {formatCoordinate(selectedCoordinate.longitude)}
+            </span>
+          ) : (
+            <span>Click map to select project coordinates.</span>
+          )}
+        </div>
+
+        <div className="absolute bottom-3 right-3 hidden rounded-lg bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 shadow-sm sm:block">
+          Map data © OpenStreetMap
+        </div>
+      </div>
+
+      {locationMessage && (
+        <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+          {locationMessage}
+        </p>
+      )}
+    </section>
+  );
+}
+
+
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
-function toLower(value?: string | null): string {
-  return value ? String(value).toLowerCase() : "";
+function toLower(value?: string | number | null): string {
+  return value === undefined || value === null
+    ? ""
+    : String(value).toLowerCase();
 }
 
 function getReadableStatus(value?: string | null): string {
@@ -203,6 +820,29 @@ function formatRelativeTime(date?: string | null): string {
   if (days < 7) return `${days}d ago`;
 
   return formatDate(date);
+}
+
+
+function toSafeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+}
+
+function getProjectRelatedCounts(
+  project: ProjectRecord
+): ProjectRelatedCounts | null {
+  return project.related_counts || null;
 }
 
 function getProjectDocumentsCount(project: ProjectRecord): number {
@@ -268,10 +908,7 @@ function getProjectVisual(project: ProjectRecord): {
 } {
   const projectType = toLower(project.project_type);
 
-  if (
-    projectType === "geological_survey" ||
-    projectType === "mining"
-  ) {
+  if (projectType === "geological_survey" || projectType === "mining") {
     return {
       icon: Mountain,
       wrapperClass: "bg-violet-50 text-violet-600",
@@ -368,8 +1005,7 @@ function normalizeProjectsResponse(response: unknown): ProjectRecord[] {
       typeof record.data === "object" &&
       Array.isArray((record.data as Record<string, unknown>).data)
     ) {
-      return (record.data as Record<string, unknown>)
-        .data as ProjectRecord[];
+      return (record.data as Record<string, unknown>).data as ProjectRecord[];
     }
 
     if (Array.isArray(record.projects)) {
@@ -413,19 +1049,13 @@ function projectToForm(project: ProjectRecord): ProjectFormState {
         ? String(project.longitude)
         : "",
     project_type:
-      (project.project_type as ProjectFormState["project_type"]) ||
-      "other",
-    status:
-      (project.status as ProjectFormState["status"]) || "planned",
+      (project.project_type as ProjectFormState["project_type"]) || "other",
+    status: (project.status as ProjectFormState["status"]) || "planned",
     security_level:
       (project.security_level as ProjectFormState["security_level"]) ||
       "internal",
-    start_date: project.start_date
-      ? String(project.start_date).slice(0, 10)
-      : "",
-    end_date: project.end_date
-      ? String(project.end_date).slice(0, 10)
-      : "",
+    start_date: project.start_date ? String(project.start_date).slice(0, 10) : "",
+    end_date: project.end_date ? String(project.end_date).slice(0, 10) : "",
   };
 }
 
@@ -444,7 +1074,9 @@ function formToPayload(form: ProjectFormState) {
     end_date: form.end_date || null,
     metadata: {
       source: "dms_frontend",
-      workflow: "project_first_document_management",
+      workflow: "project_management_related_records",
+      supervisor_requirement:
+        "Each project should contain all related records.",
     },
   };
 }
@@ -474,11 +1106,7 @@ function validateProjectForm(form: ProjectFormState): string | null {
   if (form.longitude.trim()) {
     const longitude = Number(form.longitude);
 
-    if (
-      Number.isNaN(longitude) ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
+    if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
       return "Longitude must be a number between -180 and 180.";
     }
   }
@@ -486,22 +1114,317 @@ function validateProjectForm(form: ProjectFormState): string | null {
   return null;
 }
 
-function Header({
-  user,
-}: {
-  user: UserSummary | null;
-}) {
+function getDocumentText(document: DmsDocument): string {
+  const tags = Array.isArray(document.tags)
+    ? document.tags.join(" ")
+    : document.tags || "";
+
+  return [
+    document.title,
+    document.description,
+    document.document_type,
+    document.original_file_name,
+    tags,
+    document.metadata ? JSON.stringify(document.metadata) : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isRelatedToProject(document: DmsDocument, project: ProjectRecord): boolean {
+  const documentProjectId = document.project_id;
+
+  if (
+    documentProjectId !== null &&
+    documentProjectId !== undefined &&
+    String(documentProjectId) === String(project.id)
+  ) {
+    return true;
+  }
+
+  if (document.project?.id && String(document.project.id) === String(project.id)) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasWords(text: string, words: string[]): boolean {
+  return words.some((word) => text.includes(word));
+}
+
+function isArchivedDocument(document: DmsDocument): boolean {
+  return toLower(document.status) === "archived" || Boolean(document.archived_at);
+}
+
+function isActiveDocument(document: DmsDocument): boolean {
+  return toLower(document.status) === "active" && !isArchivedDocument(document);
+}
+
+function isSecurityAlertDocument(document: DmsDocument): boolean {
+  return [
+    toLower(document.status),
+    toLower(document.scan_status),
+    toLower(document.sandbox_status),
+  ].some((value) =>
+    [
+      "infected",
+      "suspicious",
+      "failed",
+      "unsafe",
+      "blocked",
+      "rejected",
+      "quarantined",
+    ].includes(value)
+  );
+}
+
+function hasGeologicalRecord(document: DmsDocument): boolean {
+  return Boolean(
+    document.geological_record ||
+      document.geologicalRecord ||
+      hasWords(getDocumentText(document), [
+        "geological",
+        "geology",
+        "borehole",
+        "mineral",
+        "rock",
+        "groundwater",
+        "fault",
+      ])
+  );
+}
+
+function isSampleDocument(document: DmsDocument): boolean {
+  return hasWords(getDocumentText(document), [
+    "sample",
+    "sampling",
+    "specimen",
+    "core",
+    "rock sample",
+  ]);
+}
+
+function isLaboratoryDocument(document: DmsDocument): boolean {
+  return hasWords(getDocumentText(document), [
+    "lab",
+    "laboratory",
+    "assay",
+    "test result",
+    "analysis result",
+  ]);
+}
+
+function isMapDocument(document: DmsDocument): boolean {
+  return hasWords(getDocumentText(document), [
+    "map",
+    "survey map",
+    "location map",
+    "coordinate",
+    "gis",
+  ]);
+}
+
+function getProjectStudyAreaCount(
+  project: ProjectRecord,
+  relatedDocuments: DmsDocument[]
+): number {
+  const names = new Set<string>();
+
+  if (project.location_name) {
+    names.add(project.location_name.toLowerCase());
+  }
+
+  relatedDocuments.forEach((document) => {
+    const metadata = document.metadata || {};
+
+    [
+      metadata.study_area,
+      metadata.study_area_name,
+      metadata.study_area_code,
+      metadata.location_name,
+    ].forEach((value) => {
+      if (typeof value === "string" && value.trim()) {
+        names.add(value.trim().toLowerCase());
+      }
+    });
+
+    if (isMapDocument(document)) {
+      names.add(`map-${document.id}`);
+    }
+  });
+
+  return names.size;
+}
+
+function getLatestDate(values: Array<string | null | undefined>): string | null {
+  const timestamps = values
+    .map((date) => (date ? new Date(date).getTime() : NaN))
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) return null;
+
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
+function getRelatedDocuments(
+  project: ProjectRecord,
+  documents: DmsDocument[]
+): DmsDocument[] {
+  return documents.filter((document) => isRelatedToProject(document, project));
+}
+
+function getDocumentsFromProjectRecords(
+  projectRecords: ProjectRecordsResponse | null
+): DmsDocument[] {
+  const documentsRecord = projectRecords?.records?.documents;
+
+  if (Array.isArray(documentsRecord)) {
+    return documentsRecord;
+  }
+
+  if (
+    documentsRecord &&
+    typeof documentsRecord === "object" &&
+    Array.isArray((documentsRecord as { data?: DmsDocument[] }).data)
+  ) {
+    return (documentsRecord as { data?: DmsDocument[] }).data || [];
+  }
+
+  return [];
+}
+
+function buildRelatedSummaryFromBackendRecords(
+  project: ProjectRecord,
+  projectRecords: ProjectRecordsResponse | null,
+  fallbackDocuments: DmsDocument[]
+): RelatedRecordSummary {
+  if (!projectRecords?.related_counts) {
+    return buildRelatedSummary(project, fallbackDocuments);
+  }
+
+  const backendDocuments = getDocumentsFromProjectRecords(projectRecords);
+  const relatedDocuments = backendDocuments.length > 0
+    ? backendDocuments
+    : getRelatedDocuments(project, fallbackDocuments);
+
+  const counts = projectRecords.related_counts;
+
+  return {
+    documents: toSafeNumber(counts.documents, relatedDocuments.length),
+    activeDocuments: toSafeNumber(
+      counts.active_documents,
+      relatedDocuments.filter(isActiveDocument).length
+    ),
+    archivedDocuments: toSafeNumber(
+      counts.archived_documents,
+      relatedDocuments.filter(isArchivedDocument).length
+    ),
+    studyAreas: toSafeNumber(
+      counts.study_area_records,
+      getProjectStudyAreaCount(project, relatedDocuments)
+    ),
+    maps: relatedDocuments.filter(isMapDocument).length,
+    samples: toSafeNumber(
+      counts.sample_records,
+      relatedDocuments.filter(isSampleDocument).length
+    ),
+    laboratory: toSafeNumber(
+      counts.laboratory_records,
+      relatedDocuments.filter(isLaboratoryDocument).length
+    ),
+    geologicalRecords: toSafeNumber(
+      counts.geological_records,
+      relatedDocuments.filter(hasGeologicalRecord).length
+    ),
+    securityAlerts: toSafeNumber(
+      counts.security_alerts,
+      relatedDocuments.filter(isSecurityAlertDocument).length
+    ),
+    lastActivity: getLatestDate([
+      projectRecords.project?.updated_at,
+      projectRecords.project?.created_at,
+      project.updated_at,
+      project.created_at,
+      ...relatedDocuments.map(
+        (document) => document.updated_at || document.created_at
+      ),
+    ]),
+  };
+}
+
+function buildRelatedSummary(
+  project: ProjectRecord,
+  documents: DmsDocument[]
+): RelatedRecordSummary {
+  const relatedDocuments = getRelatedDocuments(project, documents);
+  const backendDocumentCount = getProjectDocumentsCount(project);
+  const backendCounts = getProjectRelatedCounts(project);
+  const documentCount = Math.max(
+    relatedDocuments.length,
+    backendDocumentCount,
+    toSafeNumber(backendCounts?.documents)
+  );
+
+  const activeDocuments = relatedDocuments.filter(isActiveDocument).length;
+  const archivedDocuments = relatedDocuments.filter(isArchivedDocument).length;
+  const studyAreas = getProjectStudyAreaCount(project, relatedDocuments);
+  const samples = relatedDocuments.filter(isSampleDocument).length;
+  const laboratory = relatedDocuments.filter(isLaboratoryDocument).length;
+  const geologicalRecords = relatedDocuments.filter(hasGeologicalRecord).length;
+  const securityAlerts = relatedDocuments.filter(isSecurityAlertDocument).length;
+
+  return {
+    documents: documentCount,
+    activeDocuments: toSafeNumber(
+      backendCounts?.active_documents,
+      activeDocuments
+    ),
+    archivedDocuments: toSafeNumber(
+      backendCounts?.archived_documents,
+      archivedDocuments
+    ),
+    studyAreas: toSafeNumber(
+      backendCounts?.study_area_records,
+      studyAreas
+    ),
+    maps: relatedDocuments.filter(isMapDocument).length,
+    samples: toSafeNumber(backendCounts?.sample_records, samples),
+    laboratory: toSafeNumber(
+      backendCounts?.laboratory_records,
+      laboratory
+    ),
+    geologicalRecords: toSafeNumber(
+      backendCounts?.geological_records,
+      geologicalRecords
+    ),
+    securityAlerts: toSafeNumber(
+      backendCounts?.security_alerts,
+      securityAlerts
+    ),
+    lastActivity: getLatestDate([
+      project.updated_at,
+      project.created_at,
+      ...relatedDocuments.map(
+        (document) => document.updated_at || document.created_at
+      ),
+    ]),
+  };
+}
+
+function Header({ user }: { user: UserSummary | null }) {
   return (
     <header className="flex min-h-[78px] shrink-0 items-center justify-between gap-5 border-b border-slate-200 bg-white px-5 lg:px-8">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
           <span>Organization</span>
           <ChevronRight size={13} />
-          <span className="text-slate-700">Projects</span>
+          <span className="text-slate-700">Project Management</span>
         </div>
 
         <h1 className="mt-1 text-lg font-bold text-slate-900">
-          Projects & Sites
+          Project Management
         </h1>
       </div>
 
@@ -535,10 +1458,7 @@ function Header({
             </p>
           </div>
 
-          <ChevronDown
-            size={14}
-            className="hidden text-slate-400 lg:block"
-          />
+          <ChevronDown size={14} className="hidden text-slate-400 lg:block" />
         </button>
       </div>
     </header>
@@ -556,15 +1476,15 @@ function AlertBox({
     alert.type === "success"
       ? CheckCircle2
       : alert.type === "error"
-      ? AlertCircle
-      : ShieldCheck;
+        ? AlertCircle
+        : ShieldCheck;
 
   const alertClass =
     alert.type === "success"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : alert.type === "error"
-      ? "border-red-200 bg-red-50 text-red-700"
-      : "border-blue-200 bg-blue-50 text-blue-700";
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-blue-200 bg-blue-50 text-blue-700";
 
   return (
     <div
@@ -648,10 +1568,7 @@ function SelectField({
           className="h-10 w-full min-w-[160px] appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
         >
           {options.map((option) => (
-            <option
-              key={option.value || option.label}
-              value={option.value}
-            >
+            <option key={option.value || option.label} value={option.value}>
               {option.label}
             </option>
           ))}
@@ -666,22 +1583,58 @@ function SelectField({
   );
 }
 
+function MiniRecordCount({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-slate-500">
+          <Icon size={13} className="shrink-0" />
+          <span className="truncate text-[10px] font-semibold uppercase tracking-wide">
+            {label}
+          </span>
+        </div>
+        <span className="text-sm font-bold text-slate-900">
+          {formatNumber(value)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({
   project,
+  relatedSummary,
+  selected,
+  onSelect,
   onEdit,
   onDelete,
 }: {
   project: ProjectRecord;
+  relatedSummary: RelatedRecordSummary;
+  selected: boolean;
+  onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const visual = getProjectVisual(project);
   const Icon = visual.icon;
   const progress = getRecordedProgress(project);
-  const documentCount = getProjectDocumentsCount(project);
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+    <article
+      className={cn(
+        "flex h-full flex-col rounded-2xl border bg-white p-5 shadow-sm shadow-slate-200/40 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md",
+        selected ? "border-blue-300 ring-4 ring-blue-50" : "border-slate-200"
+      )}
+    >
       <div className="flex items-start gap-3">
         <div
           className={cn(
@@ -692,18 +1645,19 @@ function ProjectCard({
           <Icon size={21} />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-sm font-bold text-slate-900"
-            title={project.name}
-          >
+        <button
+          type="button"
+          onClick={onSelect}
+          className="min-w-0 flex-1 text-left"
+        >
+          <p className="truncate text-sm font-bold text-slate-900" title={project.name}>
             {project.name}
           </p>
 
           <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             {project.code || `Project #${project.id}`}
           </p>
-        </div>
+        </button>
 
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -752,37 +1706,37 @@ function ProjectCard({
         {project.description || "No project description has been added."}
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
-        <div>
-          <p className="text-[10px] text-slate-400">Documents</p>
-
-          <p className="mt-1 flex items-center gap-1.5 text-sm font-bold text-slate-800">
-            <FileText size={13} className="text-blue-600" />
-            {formatNumber(documentCount)}
-          </p>
-        </div>
-
-        <div>
-          <p className="text-[10px] text-slate-400">Project type</p>
-
-          <p className="mt-1 truncate text-xs font-semibold text-slate-700">
-            {getReadableStatus(project.project_type)}
-          </p>
-        </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <MiniRecordCount
+          icon={FileText}
+          label="Documents"
+          value={relatedSummary.documents}
+        />
+        <MiniRecordCount
+          icon={MapPin}
+          label="Areas"
+          value={relatedSummary.studyAreas}
+        />
+        <MiniRecordCount
+          icon={FlaskConical}
+          label="Samples"
+          value={relatedSummary.samples}
+        />
+        <MiniRecordCount
+          icon={Archive}
+          label="Archived"
+          value={relatedSummary.archivedDocuments}
+        />
       </div>
 
       <div className="mt-4 space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <MapPin size={13} className="shrink-0 text-slate-400" />
-
-          <span className="truncate">
-            {project.location_name || "No location"}
-          </span>
+          <span className="truncate">{project.location_name || "No location"}</span>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <CalendarDays size={13} className="shrink-0 text-slate-400" />
-
           <span className="truncate">
             {formatDate(project.start_date)} – {formatDate(project.end_date)}
           </span>
@@ -790,20 +1744,14 @@ function ProjectCard({
 
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Activity size={13} className="shrink-0 text-slate-400" />
-
-          <span>
-            Updated {formatRelativeTime(project.updated_at || project.created_at)}
-          </span>
+          <span>Updated {formatRelativeTime(relatedSummary.lastActivity)}</span>
         </div>
       </div>
 
       {progress !== null && (
         <div className="mt-4">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="font-medium text-slate-500">
-              Recorded progress
-            </span>
-
+            <span className="font-medium text-slate-500">Recorded progress</span>
             <span className="font-bold text-slate-800">{progress}%</span>
           </div>
 
@@ -816,14 +1764,249 @@ function ProjectCard({
         </div>
       )}
 
-      <Link
-        to={`/Projects/${project.id}`}
-        className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white transition hover:bg-blue-700"
-      >
-        <Eye size={15} />
-        Open project
-      </Link>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+        >
+          <Eye size={15} />
+          Records
+        </button>
+
+        <Link
+          to={`/Projects/${project.id}`}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white transition hover:bg-blue-700"
+        >
+          <FolderOpen size={15} />
+          Open
+        </Link>
+      </div>
     </article>
+  );
+}
+
+function RelatedRecordsPanel({
+  project,
+  relatedSummary,
+  relatedDocuments,
+  loading = false,
+}: {
+  project: ProjectRecord | null;
+  relatedSummary: RelatedRecordSummary | null;
+  relatedDocuments: DmsDocument[];
+  loading?: boolean;
+}) {
+  if (!project || !relatedSummary) {
+    return (
+      <aside className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center shadow-sm shadow-slate-200/40 xl:sticky xl:top-6">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+          <FolderKanban size={26} />
+        </div>
+
+        <h3 className="mt-4 text-sm font-bold text-slate-800">
+          Select a project
+        </h3>
+
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          Choose a project to see all related records in one workspace.
+        </p>
+      </aside>
+    );
+  }
+
+  const recentDocuments = [...relatedDocuments]
+    .sort((first, second) => {
+      const firstDate = new Date(first.updated_at || first.created_at || 0).getTime();
+      const secondDate = new Date(second.updated_at || second.created_at || 0).getTime();
+      return secondDate - firstDate;
+    })
+    .slice(0, 5);
+
+  return (
+    <aside className="space-y-4 xl:sticky xl:top-6">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-blue-600">
+              Project Records Container
+            </p>
+
+            <h3 className="mt-1 truncate text-base font-bold text-slate-900">
+              {project.name}
+            </h3>
+
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              All records connected to this project are grouped here.
+            </p>
+
+            {loading && (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600">
+                <Loader2 size={12} className="animate-spin" />
+                Loading latest backend records...
+              </p>
+            )}
+          </div>
+
+          <span
+            className={cn(
+              "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold",
+              getStatusClass(project.status)
+            )}
+          >
+            {getReadableStatus(project.status)}
+          </span>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          {relatedRecordTiles.map((tile) => {
+            const Icon = tile.icon;
+            const value = relatedSummary[tile.key];
+            const numericValue = typeof value === "number" ? value : 0;
+
+            return (
+              <Link
+                key={tile.key}
+                to={tile.path(project)}
+                className="rounded-xl border border-slate-200 bg-slate-50 p-3 transition hover:border-blue-200 hover:bg-blue-50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm">
+                    <Icon size={15} />
+                  </div>
+
+                  <span className="text-lg font-bold text-slate-900">
+                    {formatNumber(numericValue)}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-xs font-bold text-slate-800">
+                  {tile.label}
+                </p>
+
+                <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                  {tile.helper}
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              Project Actions
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Add and open project-related records.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-2">
+          <Link
+            to={`/upload-document?project_id=${project.id}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            <UploadCloud size={15} />
+            Upload related document
+          </Link>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              to={`/search?project_id=${project.id}`}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <Search size={14} />
+              Search
+            </Link>
+
+            <Link
+              to={`/reports?project_id=${project.id}`}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <BarChart3 size={14} />
+              Reports
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              Recent Related Documents
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Latest files inside this project.
+            </p>
+          </div>
+
+          <Link
+            to={`/alldocuments?project_id=${project.id}`}
+            className="rounded-lg px-3 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+          >
+            View all
+          </Link>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {recentDocuments.length > 0 ? (
+            recentDocuments.map((document) => (
+              <Link
+                key={String(document.id)}
+                to={`/alldocuments?document_id=${document.id}`}
+                className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-blue-200 hover:bg-blue-50"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600">
+                  <FileText size={15} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-slate-800">
+                    {document.title || document.original_file_name || "Untitled document"}
+                  </p>
+
+                  <p className="mt-0.5 truncate text-[10px] text-slate-400">
+                    {getReadableStatus(document.document_type)} · Updated {formatRelativeTime(document.updated_at || document.created_at)}
+                  </p>
+                </div>
+              </Link>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center">
+              <FileText size={22} className="mx-auto text-slate-400" />
+              <p className="mt-2 text-xs font-semibold text-slate-600">
+                No related documents yet
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Upload files using this project as destination.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {relatedSummary.securityAlerts > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <ShieldCheck size={18} className="mt-0.5 shrink-0 text-amber-700" />
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                Security attention required
+              </p>
+              <p className="mt-1 text-xs leading-5 text-amber-700">
+                {relatedSummary.securityAlerts} related record(s) have security,
+                scan, sandbox or quarantine status that needs review.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+    </aside>
   );
 }
 
@@ -875,6 +2058,28 @@ function ProjectFormModal({
     });
   }
 
+  function handleMapLocationSelect(
+    latitude: number,
+    longitude: number,
+    label?: string
+  ): void {
+    onChange({
+      ...form,
+      latitude: formatCoordinate(latitude),
+      longitude: formatCoordinate(longitude),
+      location_name:
+        label && !form.location_name.trim() ? label : form.location_name,
+    });
+  }
+
+  function handleClearMapLocation(): void {
+    onChange({
+      ...form,
+      latitude: "",
+      longitude: "",
+    });
+  }
+
   const inputClass =
     "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50";
 
@@ -886,7 +2091,7 @@ function ProjectFormModal({
             <h2 className="text-lg font-bold text-slate-900">{title}</h2>
 
             <p className="mt-1 text-xs text-slate-500">
-              Add the project information used to organize documents.
+              Create the main project container where all related records will be organized.
             </p>
           </div>
 
@@ -906,9 +2111,7 @@ function ProjectFormModal({
             <FormField label="Project name" required>
               <input
                 value={form.name}
-                onChange={(event) =>
-                  updateField("name", event.target.value)
-                }
+                onChange={(event) => updateField("name", event.target.value)}
                 className={inputClass}
                 placeholder="Example: Kigali Geological Survey"
               />
@@ -917,9 +2120,7 @@ function ProjectFormModal({
             <FormField label="Project code">
               <input
                 value={form.code}
-                onChange={(event) =>
-                  updateField("code", event.target.value)
-                }
+                onChange={(event) => updateField("code", event.target.value)}
                 className={inputClass}
                 placeholder="Leave empty for automatic code"
               />
@@ -932,8 +2133,7 @@ function ProjectFormModal({
                   onChange={(event) =>
                     updateField(
                       "project_type",
-                      event.target
-                        .value as ProjectFormState["project_type"]
+                      event.target.value as ProjectFormState["project_type"]
                     )
                   }
                   className={cn(inputClass, "appearance-none pr-9")}
@@ -959,10 +2159,7 @@ function ProjectFormModal({
                 <select
                   value={form.status}
                   onChange={(event) =>
-                    updateField(
-                      "status",
-                      event.target.value as ProjectFormState["status"]
-                    )
+                    updateField("status", event.target.value as ProjectFormState["status"])
                   }
                   className={cn(inputClass, "appearance-none pr-9")}
                 >
@@ -989,8 +2186,7 @@ function ProjectFormModal({
                   onChange={(event) =>
                     updateField(
                       "security_level",
-                      event.target
-                        .value as ProjectFormState["security_level"]
+                      event.target.value as ProjectFormState["security_level"]
                     )
                   }
                   className={cn(inputClass, "appearance-none pr-9")}
@@ -1011,38 +2207,39 @@ function ProjectFormModal({
               </div>
             </FormField>
 
-            <FormField label="Location">
+            <FormField label="Location / Site">
               <input
                 value={form.location_name}
-                onChange={(event) =>
-                  updateField("location_name", event.target.value)
-                }
+                onChange={(event) => updateField("location_name", event.target.value)}
                 className={inputClass}
                 placeholder="Example: Kigali, Rwanda"
               />
             </FormField>
 
+            <div className="md:col-span-2">
+              <LocationMapPicker
+                latitude={form.latitude}
+                longitude={form.longitude}
+                onSelect={handleMapLocationSelect}
+                onClear={handleClearMapLocation}
+              />
+            </div>
+
             <FormField label="Latitude">
               <input
                 value={form.latitude}
-                onChange={(event) =>
-                  updateField("latitude", event.target.value)
-                }
-                className={inputClass}
-                placeholder="-1.9441"
-                inputMode="decimal"
+                readOnly
+                className={cn(inputClass, "cursor-not-allowed bg-slate-100")}
+                placeholder="Select from map"
               />
             </FormField>
 
             <FormField label="Longitude">
               <input
                 value={form.longitude}
-                onChange={(event) =>
-                  updateField("longitude", event.target.value)
-                }
-                className={inputClass}
-                placeholder="30.0619"
-                inputMode="decimal"
+                readOnly
+                className={cn(inputClass, "cursor-not-allowed bg-slate-100")}
+                placeholder="Select from map"
               />
             </FormField>
 
@@ -1050,9 +2247,7 @@ function ProjectFormModal({
               <input
                 type="date"
                 value={form.start_date}
-                onChange={(event) =>
-                  updateField("start_date", event.target.value)
-                }
+                onChange={(event) => updateField("start_date", event.target.value)}
                 className={inputClass}
               />
             </FormField>
@@ -1061,43 +2256,34 @@ function ProjectFormModal({
               <input
                 type="date"
                 value={form.end_date}
-                onChange={(event) =>
-                  updateField("end_date", event.target.value)
-                }
+                onChange={(event) => updateField("end_date", event.target.value)}
                 className={inputClass}
               />
             </FormField>
 
-            <FormField
-              label="Description"
-              className="md:col-span-2"
-            >
+            <FormField label="Description" className="md:col-span-2">
               <textarea
                 value={form.description}
-                onChange={(event) =>
-                  updateField("description", event.target.value)
-                }
+                onChange={(event) => updateField("description", event.target.value)}
                 rows={4}
                 className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
-                placeholder="Describe the project purpose and scope..."
+                placeholder="Describe the project purpose, scope, and expected records..."
               />
             </FormField>
 
             <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-4">
               <div className="flex items-start gap-3">
-                <ShieldCheck
-                  size={18}
-                  className="mt-0.5 shrink-0 text-blue-600"
-                />
+                <ShieldCheck size={18} className="mt-0.5 shrink-0 text-blue-600" />
 
                 <div>
                   <p className="text-sm font-semibold text-blue-800">
-                    Project-first document organization
+                    Project-first record management
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-blue-700">
-                    Save the project, then open its workspace to upload and
-                    manage related documents.
+                    After saving, all related documents, samples, lab records,
+                    study areas, geological records, archive items and reports
+                    should be attached to this project workspace.
                   </p>
                 </div>
               </div>
@@ -1124,7 +2310,6 @@ function ProjectFormModal({
               ) : (
                 <Save size={16} />
               )}
-
               {saving ? "Saving..." : "Save project"}
             </button>
           </div>
@@ -1184,17 +2369,13 @@ function LoadingPanel() {
       </p>
 
       <p className="mt-1 text-xs text-slate-400">
-        Retrieving project information...
+        Retrieving projects and related records...
       </p>
     </div>
   );
 }
 
-function EmptyPanel({
-  onCreate,
-}: {
-  onCreate: () => void;
-}) {
+function EmptyPanel({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
@@ -1206,7 +2387,8 @@ function EmptyPanel({
       </h3>
 
       <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">
-        Change the search filters or create the first project workspace.
+        Change the search filters or create the first project workspace where
+        documents, samples, study areas and other records will be grouped.
       </p>
 
       <button
@@ -1223,6 +2405,10 @@ function EmptyPanel({
 
 export default function Projects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [documents, setDocuments] = useState<DmsDocument[]>([]);
+  const [projectRecords, setProjectRecords] =
+    useState<ProjectRecordsResponse | null>(null);
+  const [recordsLoading, setRecordsLoading] = useState<boolean>(false);
   const [user, setUser] = useState<UserSummary | null>(null);
 
   const [searchInput, setSearchInput] = useState<string>("");
@@ -1238,11 +2424,10 @@ export default function Projects() {
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [editingProject, setEditingProject] =
-    useState<ProjectRecord | null>(null);
-  const [form, setForm] =
-    useState<ProjectFormState>(emptyForm);
+  const [editingProject, setEditingProject] = useState<ProjectRecord | null>(null);
+  const [form, setForm] = useState<ProjectFormState>(emptyForm);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
   const apiFilters = useMemo(
     () => ({
@@ -1259,11 +2444,28 @@ export default function Projects() {
       setLoading(true);
       setErrorMessage("");
 
-      const response = await getProjects(apiFilters);
-      const projectRows = normalizeProjectsResponse(response);
+      const [projectResponse, documentRows] = await Promise.all([
+        getProjects(apiFilters),
+        getDocuments({}),
+      ]);
+
+      const projectRows = normalizeProjectsResponse(projectResponse);
 
       setProjects(projectRows);
+      setDocuments(documentRows);
       setCurrentPage(1);
+
+      if (projectRows.length > 0) {
+        setSelectedProjectId((current) => {
+          const stillExists = projectRows.some(
+            (project) => String(project.id) === current
+          );
+
+          return stillExists ? current : String(projectRows[0].id);
+        });
+      } else {
+        setSelectedProjectId("");
+      }
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -1289,6 +2491,43 @@ export default function Projects() {
   }, [apiFilters]);
 
   useEffect(() => {
+    if (!selectedProjectId) {
+      setProjectRecords(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadSelectedProjectRecords(): Promise<void> {
+      try {
+        setRecordsLoading(true);
+
+        const records = await getProjectRecords(selectedProjectId, {
+          per_page: 25,
+        });
+
+        if (!cancelled) {
+          setProjectRecords(records);
+        }
+      } catch {
+        if (!cancelled) {
+          setProjectRecords(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setRecordsLoading(false);
+        }
+      }
+    }
+
+    loadSelectedProjectRecords();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     const timeout = window.setTimeout(() => {
       setSearch(searchInput.trim());
     }, 350);
@@ -1296,37 +2535,69 @@ export default function Projects() {
     return () => window.clearTimeout(timeout);
   }, [searchInput]);
 
+  const relatedSummaries = useMemo(() => {
+    const map = new Map<string, RelatedRecordSummary>();
+
+    projects.forEach((project) => {
+      map.set(String(project.id), buildRelatedSummary(project, documents));
+    });
+
+    return map;
+  }, [documents, projects]);
+
+  const selectedProject = useMemo(() => {
+    return (
+      projects.find((project) => String(project.id) === selectedProjectId) ||
+      projects[0] ||
+      null
+    );
+  }, [projects, selectedProjectId]);
+
+  const selectedRelatedDocuments = useMemo(() => {
+    if (!selectedProject) return [];
+
+    const backendDocuments = getDocumentsFromProjectRecords(projectRecords);
+
+    if (backendDocuments.length > 0) {
+      return backendDocuments;
+    }
+
+    return getRelatedDocuments(selectedProject, documents);
+  }, [documents, projectRecords, selectedProject]);
+
+  const selectedRelatedSummary = selectedProject
+    ? buildRelatedSummaryFromBackendRecords(
+        selectedProject,
+        projectRecords,
+        documents
+      ) ||
+      relatedSummaries.get(String(selectedProject.id)) ||
+      buildRelatedSummary(selectedProject, documents)
+    : null;
+
   const totalProjects = projects.length;
 
   const activeProjects = projects.filter(
     (project) => toLower(project.status) === "active"
   ).length;
 
-  const completedProjects = projects.filter(
-    (project) => toLower(project.status) === "completed"
-  ).length;
-
-  const restrictedProjects = projects.filter(
-    (project) =>
-      toLower(project.security_level) === "restricted"
-  ).length;
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(projects.length / PAGE_SIZE)
+  const totalRelatedRecords = Array.from(relatedSummaries.values()).reduce(
+    (total, summary) => total + summary.documents + summary.studyAreas + summary.samples + summary.laboratory + summary.geologicalRecords,
+    0
   );
 
-  const safeCurrentPage = Math.min(
-    Math.max(currentPage, 1),
-    totalPages
+  const securityAttention = Array.from(relatedSummaries.values()).reduce(
+    (total, summary) => total + summary.securityAlerts,
+    0
   );
+
+  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
+
+  const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
 
   const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
 
-  const paginatedProjects = projects.slice(
-    startIndex,
-    startIndex + PAGE_SIZE
-  );
+  const paginatedProjects = projects.slice(startIndex, startIndex + PAGE_SIZE);
 
   const hasActiveFilters =
     searchInput.trim() !== "" ||
@@ -1360,9 +2631,7 @@ export default function Projects() {
     setForm(emptyForm);
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
-  ): Promise<void> {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
     const validationError = validateProjectForm(form);
@@ -1380,21 +2649,20 @@ export default function Projects() {
       setAlert(null);
 
       if (editingProject) {
-        await updateProject(
-          editingProject.id,
-          formToPayload(form)
-        );
+        const updatedProject = await updateProject(editingProject.id, formToPayload(form));
 
+        setSelectedProjectId(String(updatedProject.id || editingProject.id));
         setAlert({
           type: "success",
           message: "Project updated successfully.",
         });
       } else {
-        await createProject(formToPayload(form));
+        const createdProject = await createProject(formToPayload(form));
 
+        setSelectedProjectId(String(createdProject.id));
         setAlert({
           type: "success",
-          message: "Project created successfully.",
+          message: "Project created successfully. You can now attach related records.",
         });
       }
 
@@ -1410,11 +2678,9 @@ export default function Projects() {
     }
   }
 
-  async function handleDeleteProject(
-    project: ProjectRecord
-  ): Promise<void> {
+  async function handleDeleteProject(project: ProjectRecord): Promise<void> {
     const confirmed = window.confirm(
-      `Delete or archive "${project.name}"?`
+      `Delete or archive "${project.name}"? Related records will remain linked to the project history.`
     );
 
     if (!confirmed) return;
@@ -1455,13 +2721,8 @@ export default function Projects() {
         <Header user={user} />
 
         <div className="custom-scrollbar flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
-            {alert && (
-              <AlertBox
-                alert={alert}
-                onClose={() => setAlert(null)}
-              />
-            )}
+          <div className="mx-auto max-w-[1600px] space-y-5 px-5 py-6 lg:px-8">
+            {alert && <AlertBox alert={alert} onClose={() => setAlert(null)} />}
 
             {errorMessage && (
               <AlertBox
@@ -1472,42 +2733,73 @@ export default function Projects() {
               />
             )}
 
-            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  Project Workspaces
-                </h2>
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="p-5 lg:p-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                      
 
-                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
-                  Create a project first, then organize its documents,
-                  security, search and reporting in one workspace.
-                </p>
-              </div>
+                      <h2 className="mt-1 text-xl font-bold text-slate-900">
+                        Project Management Workspace
+                      </h2>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={loadProjects}
-                  disabled={loading}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <RefreshCcw size={16} />
-                  )}
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                        Create and manage projects.
+                      </p>
+                    </div>
 
-                  Refresh
-                </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={loadProjects}
+                        disabled={loading}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {loading ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <RefreshCcw size={16} />
+                        )}
+                        Refresh
+                      </button>
 
-                <button
-                  type="button"
-                  onClick={openCreateModal}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
-                >
-                  <Plus size={17} />
-                  New project
-                </button>
+                      <button
+                        type="button"
+                        onClick={openCreateModal}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
+                      >
+                        <Plus size={17} />
+                        New project
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0">
+                  <div className="grid grid-cols-2 gap-3">
+                    <MiniRecordCount
+                      icon={FolderKanban}
+                      label="Projects"
+                      value={totalProjects}
+                    />
+                    <MiniRecordCount
+                      icon={FileText}
+                      label="Records"
+                      value={totalRelatedRecords}
+                    />
+                    <MiniRecordCount
+                      icon={Activity}
+                      label="Active"
+                      value={activeProjects}
+                    />
+                    <MiniRecordCount
+                      icon={ShieldCheck}
+                      label="Alerts"
+                      value={securityAttention}
+                    />
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -1515,7 +2807,7 @@ export default function Projects() {
               <MetricCard
                 title="Total Projects"
                 value={totalProjects}
-                helper="Projects in the current result"
+                helper="Projects registered in the system"
                 icon={FolderKanban}
               />
 
@@ -1527,16 +2819,16 @@ export default function Projects() {
               />
 
               <MetricCard
-                title="Completed"
-                value={completedProjects}
-                helper="Projects marked completed"
-                icon={CheckCircle2}
+                title="Related Records"
+                value={totalRelatedRecords}
+                helper="Records grouped inside projects"
+                icon={FileText}
               />
 
               <MetricCard
-                title="Restricted"
-                value={restrictedProjects}
-                helper="High-security projects"
+                title="Security Attention"
+                value={securityAttention}
+                helper="Linked records needing review"
                 icon={ShieldCheck}
               />
             </section>
@@ -1617,59 +2909,73 @@ export default function Projects() {
               )}
             </section>
 
-            {loading ? (
-              <LoadingPanel />
-            ) : projects.length === 0 ? (
-              <EmptyPanel onCreate={openCreateModal} />
-            ) : (
-              <section>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {paginatedProjects.map((project) => (
-                    <ProjectCard
-                      key={String(project.id)}
-                      project={project}
-                      onEdit={() => openEditModal(project)}
-                      onDelete={() =>
-                        handleDeleteProject(project)
-                      }
-                    />
-                  ))}
-                </div>
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div>
+                {loading ? (
+                  <LoadingPanel />
+                ) : projects.length === 0 ? (
+                  <EmptyPanel onCreate={openCreateModal} />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                      {paginatedProjects.map((project) => {
+                        const projectId = String(project.id);
+                        const relatedSummary =
+                          relatedSummaries.get(projectId) ||
+                          buildRelatedSummary(project, documents);
 
-                <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-slate-500">
-                    Showing{" "}
-                    <span className="font-semibold text-slate-700">
-                      {startIndex + 1}–
-                      {Math.min(
-                        startIndex + paginatedProjects.length,
-                        projects.length
-                      )}
-                    </span>{" "}
-                    of{" "}
-                    <span className="font-semibold text-slate-700">
-                      {projects.length}
-                    </span>{" "}
-                    projects
-                  </p>
+                        return (
+                          <ProjectCard
+                            key={projectId}
+                            project={project}
+                            relatedSummary={relatedSummary}
+                            selected={String(selectedProject?.id) === projectId}
+                            onSelect={() => setSelectedProjectId(projectId)}
+                            onEdit={() => openEditModal(project)}
+                            onDelete={() => handleDeleteProject(project)}
+                          />
+                        );
+                      })}
+                    </div>
 
-                  <Pagination
-                    currentPage={safeCurrentPage}
-                    totalPages={totalPages}
-                    onChange={setCurrentPage}
-                  />
-                </div>
-              </section>
-            )}
+                    <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-slate-500">
+                        Showing{" "}
+                        <span className="font-semibold text-slate-700">
+                          {startIndex + 1}–
+                          {Math.min(startIndex + paginatedProjects.length, projects.length)}
+                        </span>{" "}
+                        of{" "}
+                        <span className="font-semibold text-slate-700">
+                          {projects.length}
+                        </span>{" "}
+                        project workspaces
+                      </p>
+
+                      <Pagination
+                        currentPage={safeCurrentPage}
+                        totalPages={totalPages}
+                        onChange={setCurrentPage}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <RelatedRecordsPanel
+                project={selectedProject}
+                relatedSummary={selectedRelatedSummary}
+                relatedDocuments={selectedRelatedDocuments}
+                loading={recordsLoading}
+              />
+            </section>
           </div>
         </div>
       </main>
 
       {isModalOpen && (
         <ProjectFormModal
-          title={
-            editingProject ? "Update Project" : "Create Project"
-          }
+          title={editingProject ? "Update Project" : "Create Project"}
           form={form}
           saving={saving}
           onChange={setForm}

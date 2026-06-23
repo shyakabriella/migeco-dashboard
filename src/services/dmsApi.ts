@@ -96,8 +96,79 @@ export type ProjectSummary = {
   creator?: UserSummary | null;
   documents_count?: number;
   document_count?: number;
+  related_counts?: ProjectRelatedCounts | null;
+  workspace?: ProjectWorkspace | null;
+  related_records?: ProjectRelatedRecords | null;
   created_at?: string;
   updated_at?: string;
+};
+
+
+export type ProjectRelatedCounts = {
+  documents?: number | string | null;
+  active_documents?: number | string | null;
+  archived_documents?: number | string | null;
+  study_area_records?: number | string | null;
+  sample_records?: number | string | null;
+  laboratory_records?: number | string | null;
+  geological_records?: number | string | null;
+  security_alerts?: number | string | null;
+};
+
+export type ProjectWorkspace = {
+  description?: string | null;
+  quick_actions?: {
+    upload_document?: string;
+    documents?: string;
+    search?: string;
+    archives?: string;
+    study_areas?: string;
+    samples_laboratory?: string;
+    reports?: string;
+    [key: string]: string | undefined;
+  } | null;
+};
+
+export type ProjectRelatedRecords = {
+  recent_documents?: DmsDocument[];
+  study_area_documents?: DmsDocument[];
+  sample_documents?: DmsDocument[];
+  laboratory_documents?: DmsDocument[];
+  geological_records?: GeologicalRecord[];
+  security_alerts?: DmsDocument[];
+};
+
+export type PaginatedProjectDocuments = {
+  data?: DmsDocument[];
+  current_page?: number;
+  last_page?: number;
+  per_page?: number;
+  total?: number;
+  [key: string]: unknown;
+};
+
+export type ProjectRecordsResponse = {
+  project: ProjectSummary;
+  related_counts: ProjectRelatedCounts;
+  records: {
+    documents?: PaginatedProjectDocuments | DmsDocument[];
+    study_area_documents?: DmsDocument[];
+    sample_documents?: DmsDocument[];
+    laboratory_documents?: DmsDocument[];
+    geological_records?: GeologicalRecord[];
+    security_alerts?: DmsDocument[];
+    [key: string]: unknown;
+  };
+};
+
+export type ProjectDashboardSummary = {
+  total_projects?: number;
+  active_projects?: number;
+  completed_projects?: number;
+  archived_projects?: number;
+  related_documents?: number;
+  security_alerts?: number;
+  [key: string]: unknown;
 };
 
 export type DocumentType =
@@ -709,59 +780,24 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
-const TOKEN_KEYS = [
-  "dms_token",
-  "token",
-  "auth_token",
-  "authToken",
-  "access_token",
-];
-
-const USER_KEYS = ["dms_user", "user", "authUser", "auth_user"];
-
 export function getAuthToken(): string | null {
-  for (const key of TOKEN_KEYS) {
-    const localToken = localStorage.getItem(key);
-
-    if (localToken) {
-      return localToken;
-    }
-
-    const sessionToken = sessionStorage.getItem(key);
-
-    if (sessionToken) {
-      return sessionToken;
-    }
-  }
-
-  return null;
+  return (
+    localStorage.getItem("token") ||
+    localStorage.getItem("auth_token") ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("access_token")
+  );
 }
 
-export function setAuthToken(token: string, remember = true): void {
-  const storage = remember ? localStorage : sessionStorage;
-  const otherStorage = remember ? sessionStorage : localStorage;
-
-  TOKEN_KEYS.forEach((key) => {
-    storage.setItem(key, token);
-    otherStorage.removeItem(key);
-  });
+export function setAuthToken(token: string): void {
+  localStorage.setItem("token", token);
 }
 
 export function clearAuthToken(): void {
-  TOKEN_KEYS.forEach((key) => {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  });
-
-  USER_KEYS.forEach((key) => {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  });
-
-  localStorage.removeItem("role");
-  sessionStorage.removeItem("role");
-  localStorage.removeItem("permissions");
-  sessionStorage.removeItem("permissions");
+  localStorage.removeItem("token");
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("authToken");
+  localStorage.removeItem("access_token");
 }
 
 export function buildQueryString(params?: QueryParams): string {
@@ -1308,6 +1344,58 @@ export async function deleteProject(id: number | string): Promise<unknown> {
   );
 
   return unwrapLaravelData<unknown>(response);
+}
+
+export async function getProjectSummary(): Promise<ProjectDashboardSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<ProjectDashboardSummary> | ProjectDashboardSummary
+  >("/projects/summary", {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<ProjectDashboardSummary>(response);
+}
+
+export async function getProjectRecords(
+  id: number | string,
+  options?: { per_page?: number }
+): Promise<ProjectRecordsResponse> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<ProjectRecordsResponse> | ProjectRecordsResponse
+  >(`/projects/${id}/records`, {
+    method: "GET",
+    query: options,
+  });
+
+  return unwrapLaravelData<ProjectRecordsResponse>(response);
+}
+
+export async function archiveProject(
+  id: number | string,
+  payload: { reason?: string | null } = {}
+): Promise<ProjectSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<ProjectSummary> | ProjectSummary
+  >(`/projects/${id}/archive`, {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<ProjectSummary>(response);
+}
+
+export async function restoreProject(
+  id: number | string,
+  payload: { reason?: string | null } = {}
+): Promise<ProjectSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<ProjectSummary> | ProjectSummary
+  >(`/projects/${id}/restore`, {
+    method: "POST",
+    body: payload,
+  });
+
+  return unwrapLaravelData<ProjectSummary>(response);
 }
 
 /*
