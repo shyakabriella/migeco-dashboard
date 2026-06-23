@@ -9,13 +9,13 @@ import {
   ChevronDown,
   Clock3,
   FileText,
+  FlaskConical,
   FolderOpen,
   Loader2,
+  MapPinned,
   RefreshCcw,
   Search,
   ShieldCheck,
-  UploadCloud,
-  Users,
 } from "lucide-react";
 
 import AdminSidebar from "../AdminSidebar";
@@ -219,6 +219,81 @@ function isCleanDocument(document: DmsDocument): boolean {
     ["clean", "passed"].includes(scanStatus) ||
     ["safe"].includes(sandboxStatus) ||
     status === "active"
+  );
+}
+
+function isSampleOrLaboratoryDocument(document: DmsDocument): boolean {
+  const values = [
+    document.title,
+    document.document_code,
+    document.document_type,
+    document.original_file_name,
+    document.category?.name,
+    document.category?.slug,
+  ]
+    .map((value) => toLower(value))
+    .join(" ");
+
+  return [
+    "sample",
+    "laboratory",
+    "lab",
+    "rock_sample",
+    "soil_sample",
+    "core_sample",
+    "laboratory_result",
+    "test_result",
+  ].some((keyword) => values.includes(keyword));
+}
+
+function countStudyAreas(projects: ProjectSummary[]): number {
+  const studyAreaKeys = projects
+    .map((project) => {
+      const locationName = toLower(project.location_name);
+      const latitude = project.latitude;
+      const longitude = project.longitude;
+
+      if (locationName) {
+        return locationName;
+      }
+
+      if (
+        latitude !== null &&
+        latitude !== undefined &&
+        longitude !== null &&
+        longitude !== undefined
+      ) {
+        return `${latitude},${longitude}`;
+      }
+
+      return null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return new Set(studyAreaKeys).size;
+}
+
+function isPendingReviewDocument(document: DmsDocument): boolean {
+  const status = toLower(document.status);
+  const scanStatus = toLower(document.scan_status);
+  const sandboxStatus = toLower(document.sandbox_status);
+  const encryptionStatus = toLower(document.encryption_status);
+  const plaintextStatus = toLower(document.plaintext_status);
+  const aiStatus = toLower(document.ai_status);
+
+  return (
+    [
+      "pending",
+      "pending_review",
+      "pending_scan",
+      "quarantined",
+      "draft",
+    ].includes(status) ||
+    ["pending", "suspicious", "infected", "failed"].includes(scanStatus) ||
+    ["pending", "unsafe", "failed"].includes(sandboxStatus) ||
+    ["pending", "failed"].includes(encryptionStatus) ||
+    ["pending", "failed"].includes(plaintextStatus) ||
+    ["pending", "flagged", "failed"].includes(aiStatus)
   );
 }
 
@@ -643,32 +718,23 @@ export default function Dashboard() {
   }, [data.documents]);
 
   const dashboardStats = useMemo(() => {
+    const totalProjects = data.projects.length;
     const totalDocuments = data.documents.length;
 
-    const activeProjects = data.projects.filter(
-      (project) => toLower(project.status) === "active"
+    const totalSamples = data.documents.filter(
+      isSampleOrLaboratoryDocument
+    ).length;
+
+    const totalStudyAreas = countStudyAreas(data.projects);
+
+    const pendingReviews = data.documents.filter(
+      isPendingReviewDocument
     ).length;
 
     const uploadsThisWeek = weeklyUploads.reduce(
       (total, row) => total + row.value,
       0
     );
-
-    const contributorIdentifiers = data.documents
-      .map((document) => {
-        if (document.uploader?.id) {
-          return `id-${document.uploader.id}`;
-        }
-
-        if (document.uploader?.name) {
-          return `name-${document.uploader.name}`;
-        }
-
-        return null;
-      })
-      .filter((value): value is string => Boolean(value));
-
-    const contributors = new Set(contributorIdentifiers).size;
 
     const cleanDocuments = data.documents.filter(
       (document) => getDocumentDisplayStatus(document) === "clean"
@@ -683,10 +749,12 @@ export default function Dashboard() {
     ).length;
 
     return {
+      totalProjects,
       totalDocuments,
-      activeProjects,
+      totalSamples,
+      totalStudyAreas,
+      pendingReviews,
       uploadsThisWeek,
-      contributors,
       cleanDocuments,
       pendingDocuments,
       alertDocuments,
@@ -875,7 +943,14 @@ export default function Dashboard() {
               </div>
             )}
 
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <MetricCard
+                icon={<FolderOpen size={21} />}
+                label="Total Projects"
+                value={loading ? "..." : dashboardStats.totalProjects}
+                description="Projects registered in the system"
+              />
+
               <MetricCard
                 icon={<FileText size={21} />}
                 label="Total Documents"
@@ -884,24 +959,24 @@ export default function Dashboard() {
               />
 
               <MetricCard
-                icon={<FolderOpen size={21} />}
-                label="Active Projects"
-                value={loading ? "..." : dashboardStats.activeProjects}
-                description="Projects currently in progress"
+                icon={<FlaskConical size={21} />}
+                label="Total Samples"
+                value={loading ? "..." : dashboardStats.totalSamples}
+                description="Sample and laboratory documents"
               />
 
               <MetricCard
-                icon={<UploadCloud size={21} />}
-                label="Uploads This Week"
-                value={loading ? "..." : dashboardStats.uploadsThisWeek}
-                description="New documents in the last 7 days"
+                icon={<MapPinned size={21} />}
+                label="Total Study Areas"
+                value={loading ? "..." : dashboardStats.totalStudyAreas}
+                description="Unique project locations"
               />
 
               <MetricCard
-                icon={<Users size={21} />}
-                label="Contributors"
-                value={loading ? "..." : dashboardStats.contributors}
-                description="Users who uploaded documents"
+                icon={<Clock3 size={21} />}
+                label="Pending Reviews"
+                value={loading ? "..." : dashboardStats.pendingReviews}
+                description="Documents waiting for action"
               />
             </section>
 

@@ -58,15 +58,9 @@ type RegisterPayload = {
   role_id: number | "";
   name: string;
   email: string;
-  password: string;
-  c_password: string;
   phone: string;
   department: string;
   status: "active" | "inactive" | "suspended";
-};
-
-type CreateUserResponse = {
-  user?: DmsUser;
 };
 
 type AlertState = {
@@ -83,8 +77,6 @@ const initialForm: RegisterPayload = {
   role_id: "",
   name: "",
   email: "",
-  password: "",
-  c_password: "",
   phone: "",
   department: "",
   status: "active",
@@ -92,29 +84,18 @@ const initialForm: RegisterPayload = {
 
 const fallbackRoleOptions: RoleSummary[] = [
   { id: 1, name: "Admin", slug: "admin" },
-  {
-    id: 2,
-    name: "Document Controller",
-    slug: "document_controller",
-  },
-  {
-    id: 3,
-    name: "Project Manager",
-    slug: "project_manager",
-  },
-  {
-    id: 4,
-    name: "Security Officer",
-    slug: "security_officer",
-  },
-  { id: 5, name: "Geologist", slug: "geologist" },
-  { id: 6, name: "Engineer", slug: "engineer" },
-  { id: 7, name: "Auditor", slug: "auditor" },
-  { id: 8, name: "Viewer", slug: "viewer" },
+  { id: 2, name: "Geologist", slug: "geologist" },
+  { id: 3, name: "Viewer", slug: "viewer" },
 ];
 
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
+}
+
+function toLower(value?: string | number | null): string {
+  return value === null || value === undefined
+    ? ""
+    : String(value).toLowerCase();
 }
 
 function getToken(): string | null {
@@ -383,24 +364,40 @@ async function loadRoles(): Promise<RoleSummary[]> {
 }
 
 async function createUser(payload: RegisterPayload): Promise<DmsUser> {
-  const response = await apiRequest<
-    LaravelResponse<CreateUserResponse>
-  >("/register", {
+  const response = await apiRequest<unknown>("/register", {
     method: "POST",
     body: JSON.stringify({
       role_id: Number(payload.role_id),
       name: payload.name.trim(),
       email: payload.email.trim(),
-      password: payload.password,
-      c_password: payload.c_password,
       phone: payload.phone.trim() || null,
       department: payload.department.trim() || null,
       status: payload.status,
     }),
   });
 
-  const data = unwrapLaravelData<CreateUserResponse>(response, {});
-  const user = normalizeUser(data.user);
+  const data = unwrapLaravelData<unknown>(response, response);
+
+  const user =
+    normalizeUser(data) ||
+    normalizeUser(
+      data && typeof data === "object"
+        ? (data as Record<string, unknown>).user
+        : null
+    ) ||
+    normalizeUser(
+      data &&
+        typeof data === "object" &&
+        (data as Record<string, unknown>).user &&
+        typeof (data as Record<string, unknown>).user === "object"
+        ? (
+            (data as Record<string, unknown>).user as Record<
+              string,
+              unknown
+            >
+          ).user
+        : null
+    );
 
   if (!user) {
     throw new Error(
@@ -409,6 +406,12 @@ async function createUser(payload: RegisterPayload): Promise<DmsUser> {
   }
 
   return user;
+}
+
+async function deleteUser(userId: number): Promise<void> {
+  await apiRequest<unknown>(`/users/${userId}`, {
+    method: "DELETE",
+  });
 }
 
 function getInitials(name?: string | null): string {
@@ -762,6 +765,7 @@ function AddUserModal({
 
             <p className="mt-1 text-xs text-slate-500">
               Create an account and assign its role, department and status.
+              The user will receive a temporary password by email.
             </p>
           </div>
 
@@ -873,25 +877,15 @@ function AddUserModal({
             </div>
           </div>
 
-          <FormField
-            label="Password"
-            type="password"
-            value={form.password}
-            placeholder="Minimum 8 characters"
-            required
-            autoComplete="new-password"
-            onChange={(value) => onChange("password", value)}
-          />
-
-          <FormField
-            label="Confirm password"
-            type="password"
-            value={form.c_password}
-            placeholder="Enter the same password"
-            required
-            autoComplete="new-password"
-            onChange={(value) => onChange("c_password", value)}
-          />
+          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 md:col-span-2">
+            <p className="text-sm font-semibold text-blue-900">
+              Password setup by email
+            </p>
+            <p className="mt-1 text-xs leading-5 text-blue-700">
+              No password is entered by Admin. After creation, the user receives
+              a temporary password by email for local login.
+            </p>
+          </div>
         </div>
 
         <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">
@@ -966,10 +960,14 @@ function MobileUserCard({
   user,
   canManage,
   onUnavailableAction,
+  onDelete,
+  deleting,
 }: {
   user: DmsUser;
   canManage: boolean;
-  onUnavailableAction: (action: "edit" | "delete") => void;
+  onUnavailableAction: () => void;
+  onDelete: (user: DmsUser) => void;
+  deleting: boolean;
 }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1018,7 +1016,7 @@ function MobileUserCard({
         <div className="mt-4 flex gap-2">
           <button
             type="button"
-            onClick={() => onUnavailableAction("edit")}
+            onClick={onUnavailableAction}
             className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
           >
             <Edit3 size={14} />
@@ -1027,11 +1025,16 @@ function MobileUserCard({
 
           <button
             type="button"
-            onClick={() => onUnavailableAction("delete")}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+            onClick={() => onDelete(user)}
+            disabled={deleting}
+            className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trash2 size={14} />
-            Delete
+            {deleting ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+            {deleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       )}
@@ -1056,6 +1059,7 @@ export default function Usermanagement() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] =
     useState<boolean>(false);
   const [form, setForm] =
@@ -1223,14 +1227,6 @@ export default function Usermanagement() {
       return "Please enter a valid email address.";
     }
 
-    if (form.password.length < 8) {
-      return "The password must contain at least 8 characters.";
-    }
-
-    if (form.password !== form.c_password) {
-      return "The password confirmation does not match.";
-    }
-
     return null;
   }
 
@@ -1286,15 +1282,57 @@ export default function Usermanagement() {
     }
   }
 
-  function handleUnavailableAction(
-    action: "edit" | "delete"
-  ): void {
+  async function handleDeleteUser(user: DmsUser): Promise<void> {
+    if (currentUser && String(currentUser.id) === String(user.id)) {
+      setAlert({
+        type: "error",
+        message: "You cannot delete your own account.",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${user.name}? This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingUserId(user.id);
+      setAlert(null);
+
+      await deleteUser(user.id);
+
+      setUsers((currentUsers) =>
+        currentUsers.filter(
+          (currentUserRow) => currentUserRow.id !== user.id
+        )
+      );
+
+      setAlert({
+        type: "success",
+        message: "User deleted successfully.",
+      });
+    } catch (error) {
+      setAlert({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to delete the user.",
+      });
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
+  function handleUnavailableAction(): void {
     setAlert({
       type: "info",
       message:
-        action === "edit"
-          ? "Editing requires a user update endpoint such as PUT or PATCH /api/users/{id}."
-          : "Deleting requires a user delete endpoint such as DELETE /api/users/{id}.",
+        "Editing requires a user update endpoint such as PUT or PATCH /api/users/{id}.",
     });
   }
 
@@ -1336,8 +1374,7 @@ export default function Usermanagement() {
 
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
                   Manage DMS users, roles, departments and account status.
-                  Geological roles such as Geologist, Engineer and Auditor are
-                  supported when they exist in your roles table.
+                  Current system roles are Admin, Geologist, and Viewer.
                 </p>
               </div>
 
@@ -1621,9 +1658,7 @@ export default function Usermanagement() {
                                   <div className="inline-flex items-center gap-1">
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        handleUnavailableAction("edit")
-                                      }
+                                      onClick={handleUnavailableAction}
                                       className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-blue-50 hover:text-blue-700"
                                       aria-label={`Edit ${user.name}`}
                                       title="Edit user"
@@ -1634,13 +1669,21 @@ export default function Usermanagement() {
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        handleUnavailableAction("delete")
+                                        handleDeleteUser(user)
                                       }
-                                      className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                                      disabled={deletingUserId === user.id}
+                                      className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                                       aria-label={`Delete ${user.name}`}
                                       title="Delete user"
                                     >
-                                      <Trash2 size={15} />
+                                      {deletingUserId === user.id ? (
+                                        <Loader2
+                                          size={15}
+                                          className="animate-spin"
+                                        />
+                                      ) : (
+                                        <Trash2 size={15} />
+                                      )}
                                     </button>
                                   </div>
                                 </td>
@@ -1682,6 +1725,8 @@ export default function Usermanagement() {
                           onUnavailableAction={
                             handleUnavailableAction
                           }
+                          onDelete={handleDeleteUser}
+                          deleting={deletingUserId === user.id}
                         />
                       ))
                     ) : (
