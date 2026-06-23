@@ -2129,3 +2129,326 @@ export async function getAiLogs(filters?: QueryParams): Promise<AiAnalysisLog[]>
 
   return unwrapLaravelData<AiAnalysisLog[]>(response);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Study Area Management API
+|--------------------------------------------------------------------------
+| Supports the Study Area Management page:
+| area name, GPS coordinates/location, description, photos, and metadata.
+*/
+
+export type StudyAreaStatusValue =
+  | "planned"
+  | "active"
+  | "under_review"
+  | "archived";
+
+export type StudyAreaPhotoApi = {
+  id: number | string;
+  study_area_id?: number | string;
+  uploaded_by?: number | string | null;
+  caption?: string | null;
+  original_file_name?: string | null;
+  stored_file_name?: string | null;
+  file_path?: string | null;
+  disk?: string | null;
+  mime_type?: string | null;
+  extension?: string | null;
+  file_size?: number | string | null;
+  captured_at?: string | null;
+  sort_order?: number | string | null;
+  url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type StudyAreaApiRecord = {
+  id: number | string;
+  project_id?: number | string | null;
+  created_by?: number | string | null;
+  updated_by?: number | string | null;
+
+  name: string;
+  code?: string | null;
+  slug?: string | null;
+  project_name?: string | null;
+  project?: ProjectSummary | null;
+  description?: string | null;
+
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  cell?: string | null;
+  village?: string | null;
+  location_name?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  elevation?: number | string | null;
+  area_size?: string | null;
+
+  map_title?: string | null;
+  map_type?: string | null;
+  map_reference?: string | null;
+  map_scale?: string | null;
+  coordinate_system?: string | null;
+  location_accuracy?: string | null;
+  access_route?: string | null;
+  field_team?: string | null;
+
+  status?: StudyAreaStatusValue | string | null;
+  last_surveyed?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+
+  photos?: StudyAreaPhotoApi[];
+  photos_count?: number | string | null;
+  primary_photo_url?: string | null;
+
+  creator?: UserSummary | null;
+  updater?: UserSummary | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  deleted_at?: string | null;
+};
+
+export type StudyAreaFilters = {
+  search?: string;
+  status?: string;
+  project_id?: number | string;
+  district?: string;
+  per_page?: number;
+  paginate?: boolean;
+};
+
+export type StudyAreaSummary = {
+  total?: number;
+  active?: number;
+  planned?: number;
+  under_review?: number;
+  archived?: number;
+  gps_verified?: number;
+  with_photos?: number;
+  photos?: number;
+  [key: string]: number | string | undefined;
+};
+
+export type CreateStudyAreaPayload = {
+  project_id?: number | string | null;
+  project_name?: string | null;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  cell?: string | null;
+  village?: string | null;
+  location_name?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  elevation?: number | string | null;
+  area_size?: string | null;
+
+  map_title?: string | null;
+  map_type?: string | null;
+  map_reference?: string | null;
+  map_scale?: string | null;
+  coordinate_system?: string | null;
+  location_accuracy?: string | null;
+  access_route?: string | null;
+  field_team?: string | null;
+
+  status?: StudyAreaStatusValue;
+  last_surveyed?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, string | number | boolean | null | undefined> | null;
+
+  photos?: File[];
+  photo_captions?: string[];
+};
+
+export type UpdateStudyAreaPayload = Partial<CreateStudyAreaPayload>;
+
+function appendFormDataValue(
+  formData: FormData,
+  key: string,
+  value: unknown
+): void {
+  if (value === undefined || value === null || value === "") return;
+
+  if (typeof value === "boolean") {
+    formData.append(key, value ? "1" : "0");
+    return;
+  }
+
+  if (value instanceof Date) {
+    formData.append(key, value.toISOString());
+    return;
+  }
+
+  formData.append(key, String(value));
+}
+
+function studyAreaPayloadToFormData(
+  payload: CreateStudyAreaPayload | UpdateStudyAreaPayload,
+  method?: "PUT" | "PATCH"
+): FormData {
+  const formData = new FormData();
+
+  if (method) {
+    formData.append("_method", method);
+  }
+
+  const scalarKeys: Array<keyof CreateStudyAreaPayload> = [
+    "project_id",
+    "project_name",
+    "name",
+    "code",
+    "description",
+    "province",
+    "district",
+    "sector",
+    "cell",
+    "village",
+    "location_name",
+    "latitude",
+    "longitude",
+    "elevation",
+    "area_size",
+    "map_title",
+    "map_type",
+    "map_reference",
+    "map_scale",
+    "coordinate_system",
+    "location_accuracy",
+    "access_route",
+    "field_team",
+    "status",
+    "last_surveyed",
+    "notes",
+  ];
+
+  scalarKeys.forEach((key) => {
+    appendFormDataValue(formData, key, payload[key]);
+  });
+
+  if (payload.metadata && typeof payload.metadata === "object") {
+    Object.entries(payload.metadata).forEach(([key, value]) => {
+      appendFormDataValue(formData, `metadata[${key}]`, value);
+    });
+  }
+
+  payload.photos?.forEach((file) => {
+    formData.append("photos[]", file);
+  });
+
+  payload.photo_captions?.forEach((caption) => {
+    formData.append("photo_captions[]", caption ?? "");
+  });
+
+  return formData;
+}
+
+export async function getStudyAreas(
+  filters?: StudyAreaFilters
+): Promise<StudyAreaApiRecord[]> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<unknown> | StudyAreaApiRecord[] | unknown
+  >("/study-areas", {
+    method: "GET",
+    query: filters,
+  });
+
+  return unwrapLaravelCollection<StudyAreaApiRecord>(response, [
+    "study_areas",
+    "studyAreas",
+  ]);
+}
+
+export async function getStudyArea(
+  id: number | string
+): Promise<StudyAreaApiRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<StudyAreaApiRecord> | StudyAreaApiRecord
+  >(`/study-areas/${id}`, {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<StudyAreaApiRecord>(response);
+}
+
+export async function getStudyAreaSummary(): Promise<StudyAreaSummary> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<StudyAreaSummary> | StudyAreaSummary
+  >("/study-areas/summary", {
+    method: "GET",
+  });
+
+  return unwrapLaravelData<StudyAreaSummary>(response);
+}
+
+export async function createStudyArea(
+  payload: CreateStudyAreaPayload
+): Promise<StudyAreaApiRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<StudyAreaApiRecord> | StudyAreaApiRecord
+  >("/study-areas", {
+    method: "POST",
+    body: studyAreaPayloadToFormData(payload),
+  });
+
+  return unwrapLaravelData<StudyAreaApiRecord>(response);
+}
+
+export async function updateStudyArea(
+  id: number | string,
+  payload: UpdateStudyAreaPayload
+): Promise<StudyAreaApiRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<StudyAreaApiRecord> | StudyAreaApiRecord
+  >(`/study-areas/${id}`, {
+    method: "POST",
+    body: studyAreaPayloadToFormData(payload, "PUT"),
+  });
+
+  return unwrapLaravelData<StudyAreaApiRecord>(response);
+}
+
+export async function deleteStudyArea(id: number | string): Promise<unknown> {
+  const response = await apiRequest<LaravelSuccessResponse<unknown> | unknown>(
+    `/study-areas/${id}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  return unwrapLaravelData<unknown>(response);
+}
+
+export async function restoreStudyArea(
+  id: number | string
+): Promise<StudyAreaApiRecord> {
+  const response = await apiRequest<
+    LaravelSuccessResponse<StudyAreaApiRecord> | StudyAreaApiRecord
+  >(`/study-areas/${id}/restore`, {
+    method: "POST",
+  });
+
+  return unwrapLaravelData<StudyAreaApiRecord>(response);
+}
+
+export async function deleteStudyAreaPhoto(
+  studyAreaId: number | string,
+  photoId: number | string
+): Promise<unknown> {
+  const response = await apiRequest<LaravelSuccessResponse<unknown> | unknown>(
+    `/study-areas/${studyAreaId}/photos/${photoId}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  return unwrapLaravelData<unknown>(response);
+}
