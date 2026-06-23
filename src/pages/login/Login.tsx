@@ -72,13 +72,25 @@ function Login() {
       setLoading(true);
       setErrorMessage("");
 
-      await loginUser({
+      const loginResponse = await loginUser({
         email: formData.email.trim(),
         password: formData.password,
         remember: formData.remember,
       });
 
-      navigate("/dashboard", {
+      const roleSlug =
+        typeof loginResponse.user?.role?.slug === "string"
+          ? loginResponse.user.role.slug.toLowerCase()
+          : "";
+
+      const dashboardPath =
+        roleSlug === "viewer"
+          ? "/viewer-dashboard"
+          : roleSlug === "geologist"
+            ? "/geologist-dashboard"
+            : "/dashboard";
+
+      navigate(dashboardPath, {
         replace: true,
       });
     } catch (error) {

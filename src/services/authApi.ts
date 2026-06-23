@@ -14,6 +14,7 @@ export type AuthUser = {
     slug?: string;
   } | null;
   role_id?: number | string | null;
+  permissions?: string[] | null;
   [key: string]: unknown;
 };
 
@@ -53,7 +54,7 @@ const TOKEN_KEYS = [
   "access_token",
 ];
 
-const USER_KEYS = ["dms_user", "user", "authUser"];
+const USER_KEYS = ["dms_user", "user", "authUser", "auth_user"];
 
 function getStorage(remember?: boolean): Storage {
   return remember === false ? sessionStorage : localStorage;
@@ -88,7 +89,11 @@ function extractToken(
     throw new Error("Login succeeded but no access token was returned.");
   }
 
-  return token;
+  return normalizeToken(token);
+}
+
+function normalizeToken(token: string): string {
+  return token.replace(/^Bearer\s+/i, "").trim();
 }
 
 function extractTokenType(
@@ -208,7 +213,7 @@ export async function loginUser(
 
   clearAuthSession();
 
-  TOKEN_KEYS.forEach((key) => storage.setItem(key, token));
+  TOKEN_KEYS.forEach((key) => storage.setItem(key, normalizeToken(token)));
 
   if (user) {
     USER_KEYS.forEach((key) => storage.setItem(key, JSON.stringify(user)));
@@ -220,8 +225,17 @@ export async function loginUser(
       storage.setItem("role", roleSlug);
     }
 
-    if (Array.isArray(user.permissions)) {
-      storage.setItem("permissions", JSON.stringify(user.permissions));
+    const permissions =
+      Array.isArray(user.permissions)
+        ? user.permissions
+        : typeof user.role === "object" &&
+          user.role &&
+          Array.isArray((user.role as { permissions?: unknown }).permissions)
+        ? ((user.role as { permissions?: string[] }).permissions ?? [])
+        : [];
+
+    if (permissions.length > 0) {
+      storage.setItem("permissions", JSON.stringify(permissions));
     }
   }
 
@@ -236,10 +250,10 @@ export async function loginUser(
 export function getStoredToken(): string | null {
   for (const key of TOKEN_KEYS) {
     const localToken = localStorage.getItem(key);
-    if (localToken) return localToken;
+    if (localToken) return normalizeToken(localToken);
 
     const sessionToken = sessionStorage.getItem(key);
-    if (sessionToken) return sessionToken;
+    if (sessionToken) return normalizeToken(sessionToken);
   }
 
   return null;

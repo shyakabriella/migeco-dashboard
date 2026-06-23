@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ElementType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -18,6 +18,18 @@ import {
   Users,
 } from "lucide-react";
 
+type UserRole = "admin" | "geologist" | "viewer";
+
+type StoredUser = {
+  role?: {
+    slug?: string;
+    name?: string;
+  } | null;
+  role_slug?: string;
+  role_name?: string;
+  [key: string]: unknown;
+};
+
 interface NavigationItem {
   icon: ElementType;
   label: string;
@@ -32,154 +44,246 @@ interface NavigationSection {
 
 const LOGIN_PATH = "/login";
 
-const navigationSections: NavigationSection[] = [
-  {
-    title: "Overview",
-    items: [
-      {
-        icon: LayoutDashboard,
-        label: "Dashboard",
-        path: "/dashboard",
-        activePaths: ["/dashboard", "/Mytasks", "/Recentactivity"],
-      },
-    ],
-  },
-  {
-    title: "Documents",
-    items: [
-      {
-        icon: UploadCloud,
-        label: "Upload Document",
-        path: "/upload-document",
-        activePaths: [
-          "/upload-document",
-          "/upload-documents",
-          "/document-upload",
-          "/upload&digitization",
-          "/upload&digitization/bulk",
-          "/upload&digitization/upload",
-          "/upload&digitization/scan",
-          "/upload&digitization/history",
-        ],
-      },
-      {
-        icon: FileText,
-        label: "All Documents",
-        path: "/alldocuments",
-        activePaths: [
-          "/alldocuments",
-          "/mydocs",
-          "/shareddocs",
-          "/favorite",
-        ],
-      },
-      {
-        icon: Archive,
-        label: "Archives",
-        path: "/archive",
-        activePaths: ["/archive", "/archives", "/document-archives"],
-      },
-      {
-        icon: Search,
-        label: "Search & Retrieval",
-        path: "/search",
-        activePaths: [
-          "/search",
-          "/Smartsearch",
-          "/Advancedfilter",
-          "/SavedSearch",
-        ],
-      },
-    ],
-  },
-  {
-    title: "Field Operations",
-    items: [
-      {
-        icon: FolderOpen,
-        label: "Projects",
-        path: "/projects",
-        activePaths: [
-          "/projects",
-          "/Projects",
-          "/project-details",
-        ],
-      },
-      {
-        icon: Map,
-        label: "Study Areas",
-        path: "/study-areas",
-        activePaths: [
-          "/study-areas",
-          "/study-areas/maps",
-          "/study-areas/locations",
-          "/study-areas/fields",
-          "/maps",
-          "/locations",
-          "/fields",
-        ],
-      },
-      {
-        icon: FlaskConical,
-        label: "Samples & Laboratory",
-        path: "/samples-laboratory",
-        activePaths: [
-          "/samples-laboratory",
-          "/samples",
-          "/laboratory",
-          "/lab-results",
-        ],
-      },
-    ],
-  },
-  {
-    title: "Insights",
-    items: [
-      {
-        icon: BarChart3,
-        label: "Reports",
-        path: "/reports",
-        activePaths: [
-          "/reports",
-          "/reports/overview",
-          "/reports/docreport",
-          "/reports/uploadrep",
-          "/reports/depreport",
-          "/reports/versioningrep",
-          "/reports/accessreport",
-        ],
-      },
-    ],
-  },
-  {
-    title: "Management",
-    items: [
-      {
-        icon: Users,
-        label: "Users Management",
-        path: "/usermanagement",
-        activePaths: ["/usermanagement", "/users"],
-      },
-      {
-        icon: Settings,
-        label: "Settings",
-        path: "/settings",
-        activePaths: [
-          "/settings",
-          "/settings/notifications",
-          "/settings/email",
-          "/notifications",
-          "/email-settings",
-          "/settings/docnumbering",
-          "/settings/integrations",
-          "/settings/backuprestore",
-          "/settings/storage",
-          "/settings/companyprofile",
-        ],
-      },
-    ],
-  },
+const tokenStorageKeys = [
+  "dms_token",
+  "token",
+  "auth_token",
+  "authToken",
+  "access_token",
 ];
+
+const userStorageKeys = ["dms_user", "user", "authUser", "auth_user"];
+
+const roleStorageKeys = ["role", "user_role", "role_slug"];
+
+function dashboardItem(role: UserRole): NavigationItem {
+  if (role === "geologist") {
+    return {
+      icon: LayoutDashboard,
+      label: "Geologist Dashboard",
+      path: "/geologist-dashboard",
+      activePaths: [
+        "/geologist-dashboard",
+        "/dashboard/geologist",
+        "/Mytasks",
+        "/Recentactivity",
+      ],
+    };
+  }
+
+  if (role === "viewer") {
+    return {
+      icon: LayoutDashboard,
+      label: "Viewer Dashboard",
+      path: "/viewer-dashboard",
+      activePaths: [
+        "/viewer-dashboard",
+        "/dashboard/viewer",
+      ],
+    };
+  }
+
+  return {
+    icon: LayoutDashboard,
+    label: "Dashboard",
+    path: "/dashboard",
+    activePaths: ["/dashboard", "/Mytasks", "/Recentactivity"],
+  };
+}
+
+const uploadDocumentItem: NavigationItem = {
+  icon: UploadCloud,
+  label: "Upload Document",
+  path: "/upload-document",
+  activePaths: [
+    "/upload-document",
+    "/upload-documents",
+    "/document-upload",
+    "/upload&digitization",
+    "/upload&digitization/bulk",
+    "/upload&digitization/upload",
+    "/upload&digitization/scan",
+    "/upload&digitization/history",
+  ],
+};
+
+const allDocumentsItem: NavigationItem = {
+  icon: FileText,
+  label: "All Documents",
+  path: "/alldocuments",
+  activePaths: [
+    "/alldocuments",
+    "/mydocs",
+    "/shareddocs",
+    "/favorite",
+  ],
+};
+
+const archiveItem: NavigationItem = {
+  icon: Archive,
+  label: "Archives",
+  path: "/archive",
+  activePaths: ["/archive", "/archives", "/document-archives"],
+};
+
+const searchItem: NavigationItem = {
+  icon: Search,
+  label: "Search & Retrieval",
+  path: "/search",
+  activePaths: [
+    "/search",
+    "/Smartsearch",
+    "/Advancedfilter",
+    "/SavedSearch",
+  ],
+};
+
+const projectsItem: NavigationItem = {
+  icon: FolderOpen,
+  label: "Projects",
+  path: "/projects",
+  activePaths: ["/projects", "/Projects", "/project-details"],
+};
+
+const studyAreasItem: NavigationItem = {
+  icon: Map,
+  label: "Study Areas",
+  path: "/study-areas",
+  activePaths: [
+    "/study-areas",
+    "/study-areas/maps",
+    "/study-areas/locations",
+    "/study-areas/fields",
+    "/maps",
+    "/locations",
+    "/fields",
+  ],
+};
+
+const samplesLaboratoryItem: NavigationItem = {
+  icon: FlaskConical,
+  label: "Samples & Laboratory",
+  path: "/samples-laboratory",
+  activePaths: [
+    "/samples-laboratory",
+    "/samples",
+    "/laboratory",
+    "/lab-results",
+  ],
+};
+
+const reportsItem: NavigationItem = {
+  icon: BarChart3,
+  label: "Reports",
+  path: "/reports",
+  activePaths: [
+    "/reports",
+    "/reports/overview",
+    "/reports/docreport",
+    "/reports/uploadrep",
+    "/reports/depreport",
+    "/reports/versioningrep",
+    "/reports/accessreport",
+  ],
+};
+
+const usersManagementItem: NavigationItem = {
+  icon: Users,
+  label: "Users Management",
+  path: "/usermanagement",
+  activePaths: ["/usermanagement", "/users"],
+};
+
+const settingsItem: NavigationItem = {
+  icon: Settings,
+  label: "Settings",
+  path: "/settings",
+  activePaths: [
+    "/settings",
+    "/settings/notifications",
+    "/settings/email",
+    "/notifications",
+    "/email-settings",
+    "/settings/docnumbering",
+    "/settings/integrations",
+    "/settings/backuprestore",
+    "/settings/storage",
+    "/settings/companyprofile",
+  ],
+};
+
+function buildNavigationSections(role: UserRole): NavigationSection[] {
+  if (role === "viewer") {
+    return [
+      {
+        title: "Overview",
+        items: [dashboardItem(role)],
+      },
+      {
+        title: "Documents",
+        items: [allDocumentsItem, archiveItem, searchItem],
+      },
+      {
+        title: "Field Reference",
+        items: [studyAreasItem],
+      },
+    ];
+  }
+
+  if (role === "geologist") {
+    return [
+      {
+        title: "Overview",
+        items: [dashboardItem(role)],
+      },
+      {
+        title: "Documents",
+        items: [
+          uploadDocumentItem,
+          allDocumentsItem,
+          archiveItem,
+          searchItem,
+        ],
+      },
+      {
+        title: "Geological Work",
+        items: [projectsItem, studyAreasItem, samplesLaboratoryItem],
+      },
+      {
+        title: "Insights",
+        items: [reportsItem],
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "Overview",
+      items: [dashboardItem(role)],
+    },
+    {
+      title: "Documents",
+      items: [
+        uploadDocumentItem,
+        allDocumentsItem,
+        archiveItem,
+        searchItem,
+      ],
+    },
+    {
+      title: "Field Operations",
+      items: [projectsItem, studyAreasItem, samplesLaboratoryItem],
+    },
+    {
+      title: "Insights",
+      items: [reportsItem],
+    },
+    {
+      title: "Management",
+      items: [usersManagementItem, settingsItem],
+    },
+  ];
+}
 
 function pathMatches(currentPath: string, path: string): boolean {
   if (currentPath === path) {
@@ -189,23 +293,125 @@ function pathMatches(currentPath: string, path: string): boolean {
   return currentPath.startsWith(`${path}/`);
 }
 
+function normalizeRole(value?: string | null): UserRole {
+  const role = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+
+  if (role === "admin" || role === "administrator") {
+    return "admin";
+  }
+
+  if (role === "geologist") {
+    return "geologist";
+  }
+
+  if (role === "viewer" || role === "view_only" || role === "read_only") {
+    return "viewer";
+  }
+
+  return "viewer";
+}
+
+function readStoredUser(): StoredUser | null {
+  for (const key of userStorageKeys) {
+    const rawUser = localStorage.getItem(key) || sessionStorage.getItem(key);
+
+    if (!rawUser) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(rawUser) as StoredUser;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function getStoredRole(): UserRole {
+  const storedUser = readStoredUser();
+
+  if (storedUser?.role && typeof storedUser.role === "object") {
+    return normalizeRole(storedUser.role.slug || storedUser.role.name);
+  }
+
+  if (typeof storedUser?.role_slug === "string") {
+    return normalizeRole(storedUser.role_slug);
+  }
+
+  if (typeof storedUser?.role_name === "string") {
+    return normalizeRole(storedUser.role_name);
+  }
+
+  for (const key of roleStorageKeys) {
+    const storedRole = localStorage.getItem(key) || sessionStorage.getItem(key);
+
+    if (storedRole) {
+      return normalizeRole(storedRole);
+    }
+  }
+
+  return "viewer";
+}
+
+function getRoleLabel(role: UserRole): string {
+  if (role === "admin") {
+    return "Administrator workspace";
+  }
+
+  if (role === "geologist") {
+    return "Geological field workspace";
+  }
+
+  return "Read-only viewer workspace";
+}
+
+function clearAuthSession(): void {
+  tokenStorageKeys.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+
+  userStorageKeys.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+
+  roleStorageKeys.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+
+  localStorage.removeItem("permissions");
+  sessionStorage.removeItem("permissions");
+}
+
 export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [collapsed, setCollapsed] = useState<boolean>(false);
 
+  const currentRole = useMemo(() => getStoredRole(), []);
+  const navigationSections = useMemo(
+    () => buildNavigationSections(currentRole),
+    [currentRole]
+  );
+
   function handleNavigation(path: string): void {
     navigate(path);
   }
 
+  function handleLogoNavigation(): void {
+    navigate(dashboardItem(currentRole).path);
+  }
+
   function handleLogout(): void {
-    localStorage.removeItem("token");
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("auth_user");
+    clearAuthSession();
 
     navigate(LOGIN_PATH, {
       replace: true,
@@ -237,7 +443,7 @@ export default function AdminSidebar() {
       >
         <button
           type="button"
-          onClick={() => handleNavigation("/dashboard")}
+          onClick={handleLogoNavigation}
           className="flex min-w-0 items-center gap-3"
           title="MIGECO DMS"
         >
@@ -300,7 +506,7 @@ export default function AdminSidebar() {
 
                 return (
                   <button
-                    key={item.label}
+                    key={`${section.title}-${item.label}`}
                     type="button"
                     onClick={() => handleNavigation(item.path)}
                     title={collapsed ? item.label : undefined}
@@ -350,7 +556,7 @@ export default function AdminSidebar() {
               MIGECO Workspace
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Project, study area, and document records
+              {getRoleLabel(currentRole)}
             </p>
           </div>
         )}

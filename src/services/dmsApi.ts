@@ -709,24 +709,59 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
+const TOKEN_KEYS = [
+  "dms_token",
+  "token",
+  "auth_token",
+  "authToken",
+  "access_token",
+];
+
+const USER_KEYS = ["dms_user", "user", "authUser", "auth_user"];
+
 export function getAuthToken(): string | null {
-  return (
-    localStorage.getItem("token") ||
-    localStorage.getItem("auth_token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("access_token")
-  );
+  for (const key of TOKEN_KEYS) {
+    const localToken = localStorage.getItem(key);
+
+    if (localToken) {
+      return localToken;
+    }
+
+    const sessionToken = sessionStorage.getItem(key);
+
+    if (sessionToken) {
+      return sessionToken;
+    }
+  }
+
+  return null;
 }
 
-export function setAuthToken(token: string): void {
-  localStorage.setItem("token", token);
+export function setAuthToken(token: string, remember = true): void {
+  const storage = remember ? localStorage : sessionStorage;
+  const otherStorage = remember ? sessionStorage : localStorage;
+
+  TOKEN_KEYS.forEach((key) => {
+    storage.setItem(key, token);
+    otherStorage.removeItem(key);
+  });
 }
 
 export function clearAuthToken(): void {
-  localStorage.removeItem("token");
-  localStorage.removeItem("auth_token");
-  localStorage.removeItem("authToken");
-  localStorage.removeItem("access_token");
+  TOKEN_KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+
+  USER_KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+
+  localStorage.removeItem("role");
+  sessionStorage.removeItem("role");
+  localStorage.removeItem("permissions");
+  sessionStorage.removeItem("permissions");
 }
 
 export function buildQueryString(params?: QueryParams): string {

@@ -99,12 +99,29 @@ function toLower(value?: string | number | null): string {
 }
 
 function getToken(): string | null {
-  return (
-    localStorage.getItem("token") ||
-    localStorage.getItem("auth_token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("access_token")
-  );
+  const keys = [
+    "dms_token",
+    "token",
+    "auth_token",
+    "authToken",
+    "access_token",
+  ];
+
+  for (const key of keys) {
+    const token =
+      localStorage.getItem(key) || sessionStorage.getItem(key);
+
+    if (
+      token &&
+      token !== "undefined" &&
+      token !== "null" &&
+      token.trim() !== ""
+    ) {
+      return token.replace(/^Bearer\s+/i, "").trim();
+    }
+  }
+
+  return null;
 }
 
 function getApiUrl(path: string): string {
@@ -159,6 +176,12 @@ async function apiRequest<T>(
 ): Promise<T> {
   const token = getToken();
 
+  if (!token) {
+    throw new Error(
+      "No API token found. Please login again before opening User Management."
+    );
+  }
+
   const response = await fetch(getApiUrl(path), {
     ...options,
     headers: {
@@ -178,6 +201,12 @@ async function apiRequest<T>(
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error(
+        "Unauthenticated. Please login again so the API token can be sent."
+      );
+    }
+
     throw new Error(
       getErrorMessage(
         payload,
@@ -326,22 +355,21 @@ async function loadUsers(): Promise<DmsUser[]> {
     "/user-management/users",
   ];
 
+  let lastError: unknown = null;
+
   for (const path of candidates) {
     try {
       const response = await apiRequest<unknown>(path);
-      const users = normalizeUsersResponse(response);
-
-      if (users.length > 0) {
-        return users;
-      }
-    } catch {
+      return normalizeUsersResponse(response);
+    } catch (error) {
+      lastError = error;
       // Try the next supported endpoint.
     }
   }
 
-  const profile = await loadCurrentProfile();
-
-  return profile ? [profile] : [];
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to load users from GET /api/users.");
 }
 
 async function loadRoles(): Promise<RoleSummary[]> {
@@ -1177,14 +1205,6 @@ export default function Usermanagement() {
           : fallbackRoleOptions
       );
       setCurrentPage(1);
-
-      if (loadedUsers.length <= 1) {
-        setAlert({
-          type: "info",
-          message:
-            "Only the current profile was returned. Confirm that GET /api/users is available to display every user.",
-        });
-      }
     } catch (error) {
       setAlert({
         type: "error",

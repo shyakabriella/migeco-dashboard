@@ -14,6 +14,8 @@ import StudyAreasPage from "./pages/admin/Dashboard/StudyAreasPage";
 import SampleLaboratoryPage from "./pages/admin/Dashboard/SampleLaboratoryPage";
 import SettingsManagementPage from "./pages/admin/Dashboard/SettingsManagementPage";
 import UploadDocumentPage from "./pages/admin/Dashboard/UploadDocumentPage";
+import GeologistDashboard from "./pages/admin/Dashboard/GeologistDashboard";
+import ViewerDashboard from "./pages/admin/Dashboard/ViewerDashboard";
 
 import Audittrail from "./pages/admin/Audit&logs/audittrail/audittrail";
 import LoginHistory from "./pages/admin/Audit&logs/Loginhistory/loginhistory";
@@ -84,6 +86,16 @@ export const App = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/Mytasks" element={<Mytask />} />
         <Route path="/Recentactivity" element={<Recent />} />
+        <Route path="/viewer-dashboard" element={<ViewerDashboard />} />
+        <Route path="/geologist-dashboard" element={<GeologistDashboard />} />
+        <Route
+          path="/viewer"
+          element={<Navigate to="/viewer-dashboard" replace />}
+        />
+        <Route
+          path="/geologist"
+          element={<Navigate to="/geologist-dashboard" replace />}
+        />
 
         {/* Study Areas */}
         <Route path="/study-areas" element={<StudyAreasPage />} />
