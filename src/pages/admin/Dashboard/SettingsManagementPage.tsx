@@ -1484,16 +1484,7 @@ export default function SettingsManagementPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4">
-                <div className="flex items-center gap-2 text-blue-900">
-                  <ShieldCheck size={17} />
-                  <p className="text-sm font-black">Access Rule</p>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-blue-700">
-                  Every user can manage profile and password. System-level
-                  notification, email, role, and document configuration is Admin-only.
-                </p>
-              </div>
+             
             </aside>
 
             <div className="min-w-0 space-y-4">
@@ -1538,34 +1529,6 @@ export default function SettingsManagementPage() {
                 systemConfiguration={systemConfiguration}
               />
 
-              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/60">
-                <div className="mb-4 flex items-center gap-2">
-                  <CheckCircle2 size={18} className="text-emerald-600" />
-                  <h3 className="text-sm font-black text-slate-900">
-                    Supervisor Requirements
-                  </h3>
-                </div>
-                <div className="space-y-2 text-xs leading-5 text-slate-600">
-                  <CheckItem label="Email notifications" />
-                  <CheckItem label="System notifications" />
-                  <CheckItem label="User profile management" />
-                  <CheckItem label="Change password" />
-                  <CheckItem label="Role and permission management" />
-                  <CheckItem label="Notification preferences" />
-                  <CheckItem label="System configuration" />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
-                <div className="flex items-center gap-2 text-amber-900">
-                  <AlertCircle size={17} />
-                  <p className="text-sm font-black">Professional Structure</p>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-amber-700">
-                  Duplicate-looking settings were grouped into clear modules.
-                  Notifications are together, SMTP is separate, and each section saves independently.
-                </p>
-              </div>
             </aside>
           </form>
         </section>

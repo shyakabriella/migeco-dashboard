@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
   AlertCircle,
@@ -31,12 +31,12 @@ type SampleStatus =
   | "rejected";
 
 type ResultStatus =
-  | "not_started"
+  | "pending"
   | "received"
   | "testing"
   | "completed"
-  | "approved"
-  | "rejected";
+  | "rejected"
+  | "cancelled";
 
 type ResultDocumentCategory =
   | "result_report"
@@ -46,17 +46,19 @@ type ResultDocumentCategory =
   | "other";
 
 type ResultDocument = {
-  id: string;
+  id: string | number;
   name: string;
   url: string;
   size?: number;
   type?: string;
   category: ResultDocumentCategory;
   uploadedAt: string;
+  file?: File;
+  laboratoryResultId?: string | number | null;
 };
 
 type SampleRecord = {
-  id: number;
+  id: number | string;
 
   // Supervisor requirement 4: Sample Management
   sampleCode: string;
@@ -98,6 +100,131 @@ type SampleFormState = Omit<SampleRecord, "id">;
 
 type SummaryTone = "default" | "success" | "info" | "warning" | "danger";
 
+type ApiError = Error & {
+  status?: number;
+  data?: unknown;
+};
+
+type BackendPaginator<T> = {
+  data?: T[];
+  current_page?: number;
+  total?: number;
+};
+
+type BackendResultDocument = {
+  id?: string | number;
+  laboratory_result_id?: string | number | null;
+  document_type?: string | null;
+  title?: string | null;
+  original_file_name?: string | null;
+  originalFileName?: string | null;
+  file_size?: number | string | null;
+  fileSize?: number | string | null;
+  mime_type?: string | null;
+  mimeType?: string | null;
+  url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type BackendLaboratoryResult = {
+  id?: string | number;
+  laboratory?: string | null;
+  lab_reference?: string | null;
+  labReference?: string | null;
+  received_date?: string | null;
+  test_type?: string | null;
+  testType?: string | null;
+  test_method?: string | null;
+  testMethod?: string | null;
+  tested_by?: string | null;
+  testedBy?: string | null;
+  test_date?: string | null;
+  testDate?: string | null;
+  result_status?: string | null;
+  resultStatus?: string | null;
+  result_summary?: string | null;
+  resultSummary?: string | null;
+  test_results?: unknown;
+  interpretation?: string | null;
+  recommendation?: string | null;
+  notes?: string | null;
+  documents?: BackendResultDocument[] | null;
+};
+
+type BackendSample = {
+  id?: string | number;
+  sample_code?: string | null;
+  sampleCode?: string | null;
+  sample_name?: string | null;
+  sampleName?: string | null;
+  project?: string | null;
+  project_name?: string | null;
+  studyArea?: string | null;
+  study_area_name?: string | null;
+  sample_type?: string | null;
+  sampleType?: string | null;
+  material?: string | null;
+  collection_location?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  depth?: string | null;
+  collected_by?: string | null;
+  collectedBy?: string | null;
+  collected_date?: string | null;
+  collectedDate?: string | null;
+  chain_of_custody?: string | null;
+  chainOfCustody?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  laboratory?: string | null;
+  lab_reference?: string | null;
+  labReference?: string | null;
+  received_date?: string | null;
+  test_type?: string | null;
+  testType?: string | null;
+  test_method?: string | null;
+  testMethod?: string | null;
+  tested_by?: string | null;
+  testedBy?: string | null;
+  test_date?: string | null;
+  testDate?: string | null;
+  result_status?: string | null;
+  resultStatus?: string | null;
+  result_summary?: string | null;
+  resultSummary?: string | null;
+  test_results?: unknown;
+  interpretation?: string | null;
+  recommendation?: string | null;
+  laboratory_results?: BackendLaboratoryResult[] | null;
+  result_documents?: BackendResultDocument[] | null;
+  resultDocuments?: BackendResultDocument[] | null;
+  result_documents_count?: number | string | null;
+  resultDocumentsCount?: number | string | null;
+};
+
+type BackendSummary = {
+  total_samples?: number;
+  collected_samples?: number;
+  in_transit_samples?: number;
+  received_samples?: number;
+  testing_samples?: number;
+  completed_samples?: number;
+  rejected_samples?: number;
+  laboratory_results?: number;
+  completed_results?: number;
+  result_documents?: number;
+};
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000/api"
+).replace(/\/+$/, "");
+
 const emptyForm: SampleFormState = {
   sampleCode: "",
   sampleName: "",
@@ -123,148 +250,12 @@ const emptyForm: SampleFormState = {
   testMethod: "",
   testedBy: "",
   testDate: "",
-  resultStatus: "not_started",
+  resultStatus: "pending",
   testResults: "",
   resultSummary: "",
   interpretation: "",
   resultDocuments: [],
 };
-
-function createPlaceholderDocument(
-  id: string,
-  name: string,
-  content: string,
-  category: ResultDocumentCategory = "result_report",
-): ResultDocument {
-  return {
-    id,
-    name,
-    url: `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`,
-    size: content.length,
-    type: "text/plain",
-    category,
-    uploadedAt: new Date().toISOString(),
-  };
-}
-
-const initialSamples: SampleRecord[] = [
-  {
-    id: 1,
-    sampleCode: "SMP-NYG-001",
-    sampleName: "Granite Core Sample A",
-    collectionDate: "2026-06-12",
-    collector: "Team Alpha",
-    locationName: "Nyagatare Granite Belt - exposed granite ridge",
-    linkedProject: "Eastern Exploration Project",
-    studyArea: "Nyagatare Granite Belt",
-    sampleType: "Rock sample",
-    material: "Granite",
-    district: "Nyagatare",
-    sector: "Rwimiyaga",
-    latitude: "-1.308800",
-    longitude: "30.334400",
-    depth: "0.8 m",
-    status: "testing",
-    chainOfCustody: "Team Alpha > Lab Reception > Petrography Unit",
-    notes: "Collected near exposed granite ridge. Keep for petrographic verification and possible geochemical follow-up.",
-    laboratory: "MIGECO Central Laboratory",
-    labReference: "LAB-2026-014",
-    receivedDate: "2026-06-13",
-    testType: "Petrographic analysis",
-    testMethod: "Thin section microscopy",
-    testedBy: "Petrography Unit",
-    testDate: "",
-    resultStatus: "testing",
-    testResults: "Thin section preparation is in progress.",
-    resultSummary: "Testing is ongoing. No final result has been approved yet.",
-    interpretation: "Pending final petrographic interpretation.",
-    resultDocuments: [
-      createPlaceholderDocument(
-        "doc-nyg-1",
-        "LAB-2026-014-preparation-note.txt",
-        "Thin section preparation started for SMP-NYG-001.",
-        "raw_data",
-      ),
-    ],
-  },
-  {
-    id: 2,
-    sampleCode: "SMP-RLD-002",
-    sampleName: "Tin Bearing Soil Sample",
-    collectionDate: "2026-05-29",
-    collector: "Team Beta",
-    locationName: "Rulindo Tin Corridor - northern access track",
-    linkedProject: "Northern Mineral Survey",
-    studyArea: "Rulindo Tin Corridor",
-    sampleType: "Soil sample",
-    material: "Lateritic soil",
-    district: "Rulindo",
-    sector: "Base",
-    latitude: "-1.709400",
-    longitude: "30.013800",
-    depth: "0.3 m",
-    status: "completed",
-    chainOfCustody: "Team Beta > Courier > GeoChem Lab Kigali",
-    notes: "Sample point requires GPS verification before final technical report.",
-    laboratory: "GeoChem Lab Kigali",
-    labReference: "LAB-2026-009",
-    receivedDate: "2026-05-30",
-    testType: "Geochemical assay",
-    testMethod: "XRF screening and wet chemistry confirmation",
-    testedBy: "GeoChem Analyst",
-    testDate: "2026-06-03",
-    resultStatus: "completed",
-    testResults: "Tin anomaly detected. Verification sample recommended.",
-    resultSummary: "Result indicates elevated tin values compared to background samples.",
-    interpretation: "The area needs a follow-up sampling grid to confirm continuity of the anomaly.",
-    resultDocuments: [
-      createPlaceholderDocument(
-        "doc-rld-1",
-        "LAB-2026-009-result-summary.txt",
-        "Tin anomaly detected for sample SMP-RLD-002. Verification sample recommended.",
-        "result_report",
-      ),
-      createPlaceholderDocument(
-        "doc-rld-2",
-        "LAB-2026-009-chain-of-custody.txt",
-        "Team Beta > Courier > GeoChem Lab Kigali.",
-        "certificate",
-      ),
-    ],
-  },
-  {
-    id: 3,
-    sampleCode: "SMP-KRG-003",
-    sampleName: "Clay Basin Trial Sample",
-    collectionDate: "2025-11-04",
-    collector: "Team Gamma",
-    locationName: "Karongi Clay Basin - lakeside access road",
-    linkedProject: "Western Materials Study",
-    studyArea: "Karongi Clay Basin",
-    sampleType: "Clay sample",
-    material: "Clay",
-    district: "Karongi",
-    sector: "Bwishyura",
-    latitude: "-2.065300",
-    longitude: "29.347200",
-    depth: "1.2 m",
-    status: "received",
-    chainOfCustody: "Team Gamma > Materials Lab Reception",
-    notes: "Potential ceramic-grade clay. More sampling needed around the basin boundary.",
-    laboratory: "Construction Materials Lab",
-    labReference: "LAB-2025-087",
-    receivedDate: "2025-11-05",
-    testType: "Plasticity index",
-    testMethod: "Atterberg limits",
-    testedBy: "Materials Lab Team",
-    testDate: "",
-    resultStatus: "received",
-    testResults: "Awaiting test scheduling.",
-    resultSummary: "No final laboratory result recorded yet.",
-    interpretation: "Pending laboratory analysis.",
-    resultDocuments: [],
-  },
-];
 
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
@@ -285,6 +276,8 @@ function formatDate(value?: string | null): string {
 }
 
 function formatStatus(value: string): string {
+  if (!value) return "Not Set";
+
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -303,6 +296,310 @@ function formatFileSize(bytes?: number): string {
   }
 
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
+}
+
+function toSafeString(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined) return fallback;
+
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function toSafeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return fallback;
+}
+
+function normalizeSampleStatus(value?: string | null): SampleStatus {
+  const status = String(value || "collected").toLowerCase();
+
+  if (
+    [
+      "collected",
+      "in_transit",
+      "received",
+      "testing",
+      "completed",
+      "rejected",
+    ].includes(status)
+  ) {
+    return status as SampleStatus;
+  }
+
+  return "collected";
+}
+
+function normalizeResultStatus(value?: string | null): ResultStatus {
+  const status = String(value || "pending").toLowerCase();
+
+  if (
+    ["pending", "received", "testing", "completed", "rejected", "cancelled"].includes(
+      status,
+    )
+  ) {
+    return status as ResultStatus;
+  }
+
+  if (status === "not_started") return "pending";
+  if (status === "approved") return "completed";
+
+  return "pending";
+}
+
+function stringifyTestResults(value: unknown): string {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "string") return value;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        typeof item === "object" && item !== null
+          ? JSON.stringify(item)
+          : String(item),
+      )
+      .join("\n");
+  }
+
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => {
+        const valueText =
+          typeof item === "object" && item !== null
+            ? JSON.stringify(item)
+            : String(item ?? "");
+        return `${formatStatus(key)}: ${valueText}`;
+      })
+      .join("\n");
+  }
+
+  return String(value);
+}
+
+function getToken(): string | null {
+  const keys = ["dms_token", "token", "auth_token", "authToken", "access_token"];
+
+  for (const storage of [localStorage, sessionStorage]) {
+    for (const key of keys) {
+      const rawToken = storage.getItem(key);
+      if (!rawToken) continue;
+
+      const token = rawToken.replace(/^Bearer\s+/i, "").trim();
+      if (token && token !== "undefined" && token !== "null") {
+        return token;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getAuthHeaders(json = true): HeadersInit {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+
+  if (json) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+function getApiErrorMessage(payload: unknown, fallback: string): string {
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+
+    if (typeof record.message === "string") {
+      const errors = record.data;
+
+      if (errors && typeof errors === "object") {
+        const firstError = Object.values(errors as Record<string, unknown>)[0];
+
+        if (Array.isArray(firstError) && firstError.length > 0) {
+          return String(firstError[0]);
+        }
+
+        if (typeof firstError === "string") {
+          return firstError;
+        }
+      }
+
+      return record.message;
+    }
+
+    if (typeof record.error === "string") {
+      return record.error;
+    }
+  }
+
+  return fallback;
+}
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  json = true,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(json),
+      ...(options.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(
+      getApiErrorMessage(payload, `Request failed with status ${response.status}.`),
+    ) as ApiError;
+    error.status = response.status;
+    error.data = payload;
+    throw error;
+  }
+
+  return payload as T;
+}
+
+function unwrapApiData<T>(payload: unknown): T {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return (payload as { data: T }).data;
+  }
+
+  return payload as T;
+}
+
+function normalizeDocuments(
+  documents: BackendResultDocument[] | null | undefined,
+): ResultDocument[] {
+  if (!Array.isArray(documents)) return [];
+
+  return documents.map((document) => {
+    const documentType = toSafeString(document.document_type, "result_report");
+    const isImage = toSafeString(document.mime_type || document.mimeType).startsWith("image/");
+    const category: ResultDocumentCategory = isImage
+      ? "image"
+      : documentType.includes("certificate")
+        ? "certificate"
+        : documentType.includes("raw")
+          ? "raw_data"
+          : documentType.includes("result")
+            ? "result_report"
+            : "other";
+
+    return {
+      id: document.id || `${document.original_file_name}-${document.created_at}`,
+      laboratoryResultId: document.laboratory_result_id || null,
+      name:
+        document.originalFileName ||
+        document.original_file_name ||
+        document.title ||
+        "Result document",
+      url: document.url || "#",
+      size: toSafeNumber(document.fileSize || document.file_size),
+      type: document.mimeType || document.mime_type || undefined,
+      category,
+      uploadedAt: document.created_at || document.updated_at || "",
+    };
+  });
+}
+
+function normalizeSample(raw: BackendSample): SampleRecord {
+  const laboratoryResults = Array.isArray(raw.laboratory_results)
+    ? raw.laboratory_results
+    : [];
+  const latestResult = laboratoryResults[0] || null;
+  const rawDocuments = Array.isArray(raw.result_documents)
+    ? raw.result_documents
+    : Array.isArray(raw.resultDocuments)
+      ? raw.resultDocuments
+      : latestResult?.documents || [];
+
+  const resultStatus = normalizeResultStatus(
+    raw.resultStatus || raw.result_status || latestResult?.resultStatus || latestResult?.result_status,
+  );
+
+  const laboratory =
+    raw.laboratory || latestResult?.laboratory || "";
+  const labReference =
+    raw.labReference || raw.lab_reference || latestResult?.labReference || latestResult?.lab_reference || "";
+  const receivedDate =
+    raw.received_date || latestResult?.received_date || "";
+  const testType =
+    raw.testType || raw.test_type || latestResult?.testType || latestResult?.test_type || "";
+  const testMethod =
+    raw.testMethod || raw.test_method || latestResult?.testMethod || latestResult?.test_method || "";
+  const testedBy =
+    raw.testedBy || raw.tested_by || latestResult?.testedBy || latestResult?.tested_by || "";
+  const testDate =
+    raw.testDate || raw.test_date || latestResult?.testDate || latestResult?.test_date || "";
+  const resultSummary =
+    raw.resultSummary || raw.result_summary || latestResult?.resultSummary || latestResult?.result_summary || "";
+  const testResults = stringifyTestResults(
+    raw.test_results || latestResult?.test_results || "",
+  );
+  const interpretation =
+    raw.interpretation || latestResult?.interpretation || raw.recommendation || latestResult?.recommendation || "";
+
+  return {
+    id: raw.id || `${raw.sample_code || raw.sampleCode || Date.now()}`,
+    sampleCode: toSafeString(raw.sampleCode || raw.sample_code, "-"),
+    sampleName: toSafeString(raw.sampleName || raw.sample_name, "-"),
+    collectionDate: toSafeString(raw.collectedDate || raw.collected_date),
+    collector: toSafeString(raw.collectedBy || raw.collected_by, "-"),
+    locationName: toSafeString(raw.collection_location || raw.district, "-"),
+    linkedProject: toSafeString(raw.project || raw.project_name, "General Repository"),
+    studyArea: toSafeString(raw.studyArea || raw.study_area_name, "Unassigned Study Area"),
+    sampleType: toSafeString(raw.sampleType || raw.sample_type, "General sample"),
+    material: toSafeString(raw.material, "-"),
+    district: toSafeString(raw.district, "-"),
+    sector: toSafeString(raw.sector, "-"),
+    latitude: toSafeString(raw.latitude, "-"),
+    longitude: toSafeString(raw.longitude, "-"),
+    depth: toSafeString(raw.depth, "-"),
+    status: normalizeSampleStatus(raw.status),
+    chainOfCustody: toSafeString(raw.chainOfCustody || raw.chain_of_custody, "-"),
+    notes: toSafeString(raw.notes, "-"),
+    laboratory: toSafeString(laboratory, "-"),
+    labReference: toSafeString(labReference, "-"),
+    receivedDate: toSafeString(receivedDate),
+    testType: toSafeString(testType, "-"),
+    testMethod: toSafeString(testMethod, "-"),
+    testedBy: toSafeString(testedBy, "-"),
+    testDate: toSafeString(testDate),
+    resultStatus,
+    testResults: toSafeString(testResults, "No test result recorded yet."),
+    resultSummary: toSafeString(resultSummary, "No result summary recorded yet."),
+    interpretation: toSafeString(interpretation, "No interpretation recorded yet."),
+    resultDocuments: normalizeDocuments(rawDocuments),
+  };
+}
+
+function normalizeSamplesResponse(payload: unknown): SampleRecord[] {
+  const data = unwrapApiData<BackendSample[] | BackendPaginator<BackendSample>>(payload);
+
+  if (Array.isArray(data)) {
+    return data.map(normalizeSample);
+  }
+
+  if (data && typeof data === "object" && Array.isArray((data as BackendPaginator<BackendSample>).data)) {
+    return ((data as BackendPaginator<BackendSample>).data || []).map(normalizeSample);
+  }
+
+  return [];
 }
 
 function getSampleStatusClass(status: SampleStatus): string {
@@ -326,7 +623,6 @@ function getSampleStatusClass(status: SampleStatus): string {
 
 function getResultStatusClass(status: ResultStatus): string {
   switch (status) {
-    case "approved":
     case "completed":
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "testing":
@@ -334,8 +630,9 @@ function getResultStatusClass(status: ResultStatus): string {
     case "received":
       return "border-violet-200 bg-violet-50 text-violet-700";
     case "rejected":
+    case "cancelled":
       return "border-red-200 bg-red-50 text-red-700";
-    case "not_started":
+    case "pending":
       return "border-slate-200 bg-slate-50 text-slate-600";
     default:
       return "border-slate-200 bg-slate-50 text-slate-600";
@@ -349,76 +646,173 @@ function getDocumentCount(samples: SampleRecord[]): number {
   );
 }
 
-function readFileAsDataUrl(file: File): Promise<ResultDocument> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+function createResultDocumentFromFile(file: File): ResultDocument {
+  const isImage = file.type.startsWith("image/");
 
-    reader.onload = () => {
-      const isImage = file.type.startsWith("image/");
-
-      resolve({
-        id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2)}`,
-        name: file.name,
-        url: String(reader.result || ""),
-        size: file.size,
-        type: file.type,
-        category: isImage ? "image" : "result_report",
-        uploadedAt: new Date().toISOString(),
-      });
-    };
-
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-function formToSample(form: SampleFormState, id: number): SampleRecord {
   return {
-    id,
-    sampleCode: form.sampleCode.trim(),
-    sampleName: form.sampleName.trim() || form.sampleCode.trim(),
-    collectionDate: form.collectionDate,
-    collector: form.collector.trim(),
-    locationName: form.locationName.trim(),
-    linkedProject: form.linkedProject.trim(),
-    studyArea: form.studyArea.trim() || "Unassigned Study Area",
-    sampleType: form.sampleType.trim() || "General sample",
-    material: form.material.trim() || "-",
-    district: form.district.trim() || "-",
-    sector: form.sector.trim() || "-",
-    latitude: form.latitude.trim() || "-",
-    longitude: form.longitude.trim() || "-",
-    depth: form.depth.trim() || "-",
-    status: form.status,
-    chainOfCustody:
-      form.chainOfCustody.trim() || "Chain of custody not recorded.",
-    notes: form.notes.trim() || "No notes added.",
-    laboratory: form.laboratory.trim() || "-",
-    labReference: form.labReference.trim() || "-",
-    receivedDate: form.receivedDate || "",
-    testType: form.testType.trim() || "-",
-    testMethod: form.testMethod.trim() || "-",
-    testedBy: form.testedBy.trim() || "-",
-    testDate: form.testDate || "",
-    resultStatus: form.resultStatus,
-    testResults: form.testResults.trim() || "No test result recorded yet.",
-    resultSummary: form.resultSummary.trim() || "No result summary recorded yet.",
-    interpretation: form.interpretation.trim() || "No interpretation recorded yet.",
-    resultDocuments: form.resultDocuments,
+    id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2)}`,
+    name: file.name,
+    url: URL.createObjectURL(file),
+    size: file.size,
+    type: file.type,
+    category: isImage ? "image" : "result_report",
+    uploadedAt: new Date().toISOString(),
+    file,
   };
 }
 
+function buildSampleFormData(form: SampleFormState): FormData {
+  const data = new FormData();
+
+  function append(key: string, value: string | number | null | undefined): void {
+    if (value === null || value === undefined) return;
+
+    const text = String(value).trim();
+    if (text === "") return;
+
+    data.append(key, text);
+  }
+
+  append("sample_code", form.sampleCode);
+  append("sample_name", form.sampleName || form.sampleCode);
+  append("project_name", form.linkedProject);
+  append("study_area_name", form.studyArea);
+  append("sample_type", form.sampleType);
+  append("material", form.material);
+  append("collection_location", form.locationName);
+  append("district", form.district);
+  append("sector", form.sector);
+  append("latitude", form.latitude);
+  append("longitude", form.longitude);
+  append("depth", form.depth);
+  append("collected_by", form.collector);
+  append("collected_date", form.collectionDate);
+  append("chain_of_custody", form.chainOfCustody);
+  append("status", form.status);
+  append("notes", form.notes);
+
+  append("laboratory", form.laboratory);
+  append("lab_reference", form.labReference);
+  append("received_date", form.receivedDate);
+  append("test_type", form.testType);
+  append("test_method", form.testMethod);
+  append("tested_by", form.testedBy);
+  append("test_date", form.testDate);
+  append("result_status", form.resultStatus);
+  append("result_summary", form.resultSummary);
+  append("interpretation", form.interpretation);
+
+  if (form.testResults.trim()) {
+    data.append("test_results[details]", form.testResults.trim());
+  }
+
+  form.resultDocuments.forEach((document) => {
+    if (document.file) {
+      data.append("result_documents[]", document.file, document.file.name);
+    }
+  });
+
+  return data;
+}
+
+function validateForm(form: SampleFormState): string | null {
+  if (!form.sampleCode.trim()) return "Sample code is required.";
+  if (!form.collectionDate) return "Collection date is required.";
+  if (!form.collector.trim()) return "Collector is required.";
+  if (!form.linkedProject.trim()) return "Linked project is required.";
+  if (!form.sampleType.trim()) return "Sample type is required.";
+  if (!form.locationName.trim() && !form.district.trim()) {
+    return "Location or district is required.";
+  }
+
+  if (form.latitude.trim()) {
+    const latitude = Number(form.latitude);
+    if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
+      return "Latitude must be a number between -90 and 90.";
+    }
+  }
+
+  if (form.longitude.trim()) {
+    const longitude = Number(form.longitude);
+    if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
+      return "Longitude must be a number between -180 and 180.";
+    }
+  }
+
+  return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  const apiError = error as ApiError;
+
+  if (apiError.status === 401) {
+    return "Your session expired. Please sign in again.";
+  }
+
+  if (apiError.status === 403) {
+    return apiError.message || "You do not have permission for this action.";
+  }
+
+  if (apiError.status === 422) {
+    return apiError.message || "Validation failed. Please check the form.";
+  }
+
+  return apiError.message || "The action could not be completed.";
+}
+
 export default function SampleLaboratoryPage() {
-  const [samples, setSamples] = useState<SampleRecord[]>(initialSamples);
-  const [selectedSample, setSelectedSample] = useState<SampleRecord | null>(
-    initialSamples[0],
-  );
+  const [samples, setSamples] = useState<SampleRecord[]>([]);
+  const [summary, setSummary] = useState<BackendSummary | null>(null);
+  const [selectedSample, setSelectedSample] = useState<SampleRecord | null>(null);
   const [search, setSearch] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [form, setForm] = useState<SampleFormState>(emptyForm);
+  const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const [pageError, setPageError] = useState<string>("");
+  const [successMessage, setSuccessMessage] = useState<string>("");
+
+  async function loadSamples(): Promise<void> {
+    try {
+      setLoading(true);
+      setPageError("");
+
+      const query = new URLSearchParams();
+      query.set("per_page", "200");
+
+      const [samplesPayload, summaryPayload] = await Promise.all([
+        apiRequest<unknown>(`/samples-laboratory?${query.toString()}`),
+        apiRequest<unknown>("/samples-laboratory/summary").catch(() => null),
+      ]);
+
+      const rows = normalizeSamplesResponse(samplesPayload);
+      const summaryData = summaryPayload ? unwrapApiData<BackendSummary>(summaryPayload) : null;
+
+      setSamples(rows);
+      setSummary(summaryData);
+      setSelectedSample((current) => {
+        if (!rows.length) return null;
+
+        const existing = rows.find(
+          (sample) => current && String(sample.id) === String(current.id),
+        );
+
+        return existing || rows[0];
+      });
+    } catch (error) {
+      setPageError(getErrorMessage(error));
+      setSamples([]);
+      setSelectedSample(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSamples();
+  }, []);
 
   const filteredSamples = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -455,6 +849,11 @@ export default function SampleLaboratoryPage() {
     });
   }, [samples, search, status]);
 
+  const sampleCount = summary?.total_samples ?? samples.length;
+  const testingCount = summary?.testing_samples ?? samples.filter((sample) => sample.status === "testing").length;
+  const completedResultCount = summary?.completed_results ?? samples.filter((sample) => sample.resultStatus === "completed").length;
+  const resultDocumentCount = summary?.result_documents ?? getDocumentCount(samples);
+
   function handleFormChange<K extends keyof SampleFormState>(
     field: K,
     value: SampleFormState[K],
@@ -468,6 +867,7 @@ export default function SampleLaboratoryPage() {
   function openCreateModal(): void {
     setForm(emptyForm);
     setError("");
+    setSuccessMessage("");
     setIsModalOpen(true);
   }
 
@@ -484,51 +884,38 @@ export default function SampleLaboratoryPage() {
   ): Promise<void> {
     event.preventDefault();
 
-    if (!form.sampleCode.trim()) {
-      setError("Sample code is required.");
-      return;
-    }
+    const validationError = validateForm(form);
 
-    if (!form.collectionDate) {
-      setError("Collection date is required.");
-      return;
-    }
-
-    if (!form.collector.trim()) {
-      setError("Collector is required.");
-      return;
-    }
-
-    if (!form.locationName.trim() && !form.district.trim()) {
-      setError("Location or district is required.");
-      return;
-    }
-
-    if (!form.linkedProject.trim()) {
-      setError("Linked project is required.");
-      return;
-    }
-
-    const duplicateSample = samples.some(
-      (sample) =>
-        sample.sampleCode.toLowerCase() === form.sampleCode.trim().toLowerCase(),
-    );
-
-    if (duplicateSample) {
-      setError("Sample code already exists. Use a unique sample code.");
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     try {
       setSaving(true);
       setError("");
+      setSuccessMessage("");
 
-      const newSample = formToSample(form, Date.now());
+      const formData = buildSampleFormData(form);
 
-      setSamples((current) => [newSample, ...current]);
-      setSelectedSample(newSample);
+      const response = await apiRequest<unknown>(
+        "/samples-laboratory",
+        {
+          method: "POST",
+          body: formData,
+        },
+        false,
+      );
+
+      const savedSample = normalizeSample(unwrapApiData<BackendSample>(response));
+
+      setSelectedSample(savedSample);
       setIsModalOpen(false);
       setForm(emptyForm);
+      setSuccessMessage("Sample and laboratory result saved successfully.");
+      await loadSamples();
+    } catch (error) {
+      setError(getErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -558,10 +945,16 @@ export default function SampleLaboratoryPage() {
               onClick={() => {
                 setSearch("");
                 setStatus("");
+                loadSamples();
               }}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+              disabled={loading}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCcw size={15} />
+              {loading ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <RefreshCcw size={15} />
+              )}
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
@@ -591,36 +984,41 @@ export default function SampleLaboratoryPage() {
                   </p>
                 </div>
 
+                {pageError && (
+                  <div className="mb-4 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    {pageError}
+                  </div>
+                )}
+
+                {successMessage && (
+                  <div className="mb-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                    {successMessage}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                   <SummaryCard
                     label="Samples"
-                    value={String(samples.length)}
+                    value={String(sampleCount)}
                     icon={<TestTube2 size={16} />}
                   />
                   <SummaryCard
                     label="Testing"
-                    value={String(
-                      samples.filter((sample) => sample.status === "testing")
-                        .length,
-                    )}
+                    value={String(testingCount)}
                     icon={<Microscope size={16} />}
                     tone="info"
                   />
                   <SummaryCard
                     label="Completed Results"
-                    value={String(
-                      samples.filter(
-                        (sample) =>
-                          sample.resultStatus === "completed" ||
-                          sample.resultStatus === "approved",
-                      ).length,
-                    )}
+                    value={String(completedResultCount)}
                     icon={<CheckCircle2 size={16} />}
                     tone="success"
                   />
                   <SummaryCard
                     label="Result Documents"
-                    value={String(getDocumentCount(samples))}
+                    value={String(resultDocumentCount)}
                     icon={<FileText size={16} />}
                     tone="warning"
                   />
@@ -660,7 +1058,8 @@ export default function SampleLaboratoryPage() {
                       <option value="received">Received</option>
                       <option value="testing">Testing</option>
                       <option value="completed">Completed</option>
-                      <option value="approved">Approved Result</option>
+                      <option value="pending">Pending Result</option>
+                      <option value="cancelled">Cancelled Result</option>
                       <option value="rejected">Rejected</option>
                     </select>
                   </div>
@@ -668,148 +1067,152 @@ export default function SampleLaboratoryPage() {
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto bg-slate-50/60 p-3">
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
-                  <table className="w-full min-w-[1180px] text-left text-sm">
-                    <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">Sample Code</th>
-                        <th className="px-4 py-3">Collection</th>
-                        <th className="px-4 py-3">Location</th>
-                        <th className="px-4 py-3">Linked Project</th>
-                        <th className="px-4 py-3">Laboratory Result</th>
-                        <th className="px-4 py-3">Result Documents</th>
-                        <th className="px-4 py-3">Status</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {filteredSamples.length === 0 ? (
+                {loading ? (
+                  <LoadingPanel />
+                ) : (
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
+                    <table className="w-full min-w-[1180px] text-left text-sm">
+                      <thead className="border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
                         <tr>
-                          <td colSpan={7} className="p-10 text-center">
-                            <FlaskConical
-                              size={28}
-                              className="mx-auto text-slate-500"
-                            />
-                            <p className="mt-3 font-semibold text-slate-700">
-                              No samples found
-                            </p>
-                            <p className="mt-1 text-xs text-slate-400">
-                              Create a new sample or change filters.
-                            </p>
-                          </td>
+                          <th className="px-4 py-3">Sample Code</th>
+                          <th className="px-4 py-3">Collection</th>
+                          <th className="px-4 py-3">Location</th>
+                          <th className="px-4 py-3">Linked Project</th>
+                          <th className="px-4 py-3">Laboratory Result</th>
+                          <th className="px-4 py-3">Result Documents</th>
+                          <th className="px-4 py-3">Status</th>
                         </tr>
-                      ) : (
-                        filteredSamples.map((sample) => {
-                          const active = selectedSample?.id === sample.id;
+                      </thead>
 
-                          return (
-                            <tr
-                              key={sample.id}
-                              onClick={() => setSelectedSample(sample)}
-                              className={cn(
-                                "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
-                                active ? "bg-blue-50/80" : "bg-white",
-                              )}
-                            >
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                                    <TestTube2 size={17} />
+                      <tbody>
+                        {filteredSamples.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-10 text-center">
+                              <FlaskConical
+                                size={28}
+                                className="mx-auto text-slate-500"
+                              />
+                              <p className="mt-3 font-semibold text-slate-700">
+                                No samples found
+                              </p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                Create a new sample or change filters.
+                              </p>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredSamples.map((sample) => {
+                            const active = selectedSample?.id === sample.id;
+
+                            return (
+                              <tr
+                                key={String(sample.id)}
+                                onClick={() => setSelectedSample(sample)}
+                                className={cn(
+                                  "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
+                                  active ? "bg-blue-50/80" : "bg-white",
+                                )}
+                              >
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                                      <TestTube2 size={17} />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="max-w-[220px] truncate font-semibold text-slate-800">
+                                        {sample.sampleCode}
+                                      </p>
+                                      <p className="mt-1 text-[11px] text-slate-400">
+                                        {sample.sampleName || sample.sampleType}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="max-w-[220px] truncate font-semibold text-slate-800">
-                                      {sample.sampleCode}
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-slate-400">
-                                      {sample.sampleName || sample.sampleType}
-                                    </p>
+                                </td>
+
+                                <td className="px-4 py-3 text-slate-600">
+                                  <p className="max-w-[180px] truncate">
+                                    {formatDate(sample.collectionDate)}
+                                  </p>
+                                  <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+                                    <UserRound size={11} />
+                                    {sample.collector}
+                                  </p>
+                                </td>
+
+                                <td className="px-4 py-3 text-slate-600">
+                                  <p className="max-w-[220px] truncate">
+                                    {sample.locationName || sample.district}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-slate-400">
+                                    {sample.latitude}, {sample.longitude}
+                                  </p>
+                                </td>
+
+                                <td className="px-4 py-3 text-slate-600">
+                                  <p className="max-w-[190px] truncate font-medium">
+                                    {sample.linkedProject}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-slate-400">
+                                    {sample.studyArea}
+                                  </p>
+                                </td>
+
+                                <td className="px-4 py-3">
+                                  <p className="max-w-[190px] truncate text-xs font-semibold text-slate-700">
+                                    {sample.testType}
+                                  </p>
+                                  <p className="mt-1 max-w-[220px] truncate text-[11px] text-slate-400">
+                                    {sample.resultSummary}
+                                  </p>
+                                </td>
+
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                      <Paperclip size={14} />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-semibold text-slate-700">
+                                        {sample.resultDocuments.length} file
+                                        {sample.resultDocuments.length === 1
+                                          ? ""
+                                          : "s"}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400">
+                                        Results evidence
+                                      </p>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
+                                </td>
 
-                              <td className="px-4 py-3 text-slate-600">
-                                <p className="max-w-[180px] truncate">
-                                  {formatDate(sample.collectionDate)}
-                                </p>
-                                <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
-                                  <UserRound size={11} />
-                                  {sample.collector}
-                                </p>
-                              </td>
-
-                              <td className="px-4 py-3 text-slate-600">
-                                <p className="max-w-[220px] truncate">
-                                  {sample.locationName || sample.district}
-                                </p>
-                                <p className="mt-1 text-[11px] text-slate-400">
-                                  {sample.latitude}, {sample.longitude}
-                                </p>
-                              </td>
-
-                              <td className="px-4 py-3 text-slate-600">
-                                <p className="max-w-[190px] truncate font-medium">
-                                  {sample.linkedProject}
-                                </p>
-                                <p className="mt-1 text-[11px] text-slate-400">
-                                  {sample.studyArea}
-                                </p>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <p className="max-w-[190px] truncate text-xs font-semibold text-slate-700">
-                                  {sample.testType}
-                                </p>
-                                <p className="mt-1 max-w-[220px] truncate text-[11px] text-slate-400">
-                                  {sample.resultSummary}
-                                </p>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                                    <Paperclip size={14} />
+                                <td className="px-4 py-3">
+                                  <div className="space-y-1.5">
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full border px-2.5 py-1 text-xs font-medium",
+                                        getSampleStatusClass(sample.status),
+                                      )}
+                                    >
+                                      {formatStatus(sample.status)}
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-medium",
+                                        getResultStatusClass(sample.resultStatus),
+                                      )}
+                                    >
+                                      Result: {formatStatus(sample.resultStatus)}
+                                    </span>
                                   </div>
-                                  <div>
-                                    <p className="text-xs font-semibold text-slate-700">
-                                      {sample.resultDocuments.length} file
-                                      {sample.resultDocuments.length === 1
-                                        ? ""
-                                        : "s"}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400">
-                                      Results evidence
-                                    </p>
-                                  </div>
-                                </div>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <div className="space-y-1.5">
-                                  <span
-                                    className={cn(
-                                      "inline-flex rounded-full border px-2.5 py-1 text-xs font-medium",
-                                      getSampleStatusClass(sample.status),
-                                    )}
-                                  >
-                                    {formatStatus(sample.status)}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-medium",
-                                      getResultStatusClass(sample.resultStatus),
-                                    )}
-                                  >
-                                    Result: {formatStatus(sample.resultStatus)}
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -828,6 +1231,22 @@ export default function SampleLaboratoryPage() {
           onClose={closeCreateModal}
         />
       )}
+    </div>
+  );
+}
+
+function LoadingPanel() {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+        <Loader2 size={23} className="animate-spin" />
+      </div>
+      <p className="mt-4 text-sm font-semibold text-slate-700">
+        Loading samples
+      </p>
+      <p className="mt-1 text-xs text-slate-400">
+        Retrieving sample and laboratory records from the backend...
+      </p>
     </div>
   );
 }
@@ -972,13 +1391,13 @@ function SampleDetails({ sample }: { sample: SampleRecord | null }) {
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
               Test Results
             </p>
-            <p className="text-xs leading-5 text-emerald-800">
+            <p className="whitespace-pre-line text-xs leading-5 text-emerald-800">
               {sample.testResults}
             </p>
             <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
               Interpretation
             </p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">
+            <p className="mt-1 whitespace-pre-line text-xs leading-5 text-emerald-800">
               {sample.interpretation}
             </p>
           </div>
@@ -991,7 +1410,9 @@ function SampleDetails({ sample }: { sample: SampleRecord | null }) {
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Notes
             </p>
-            <p className="text-xs leading-5 text-slate-600">{sample.notes}</p>
+            <p className="whitespace-pre-line text-xs leading-5 text-slate-600">
+              {sample.notes}
+            </p>
           </div>
         </div>
       </div>
@@ -1058,9 +1479,10 @@ function DocumentList({ documents }: { documents: ResultDocument[] }) {
     <div className="space-y-2">
       {documents.map((document) => (
         <a
-          key={document.id}
-          href={document.url}
-          download={document.name}
+          key={String(document.id)}
+          href={document.url || "#"}
+          target="_blank"
+          rel="noreferrer"
           className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-blue-200 hover:bg-blue-50"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600">
@@ -1183,6 +1605,7 @@ function CreateSampleModal({
                 <InputField
                   label="Sample Type"
                   value={form.sampleType}
+                  required
                   placeholder="Rock sample, soil sample, water sample..."
                   onChange={(value) => onChange("sampleType", value)}
                 />
@@ -1320,12 +1743,12 @@ function CreateSampleModal({
                     }
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:bg-white"
                   >
-                    <option value="not_started">Not Started</option>
+                    <option value="pending">Pending</option>
                     <option value="received">Received</option>
                     <option value="testing">Testing</option>
                     <option value="completed">Completed</option>
-                    <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
                   </select>
                 </div>
 
@@ -1414,7 +1837,7 @@ function CreateSampleModal({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
-            Save Sample
+            {saving ? "Saving..." : "Save Sample"}
           </button>
         </div>
       </form>
@@ -1458,31 +1881,45 @@ function ResultDocumentsUpload({
   documents: ResultDocument[];
   onChange: (documents: ResultDocument[]) => void;
 }) {
-  const [uploading, setUploading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
-  async function handleFiles(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const files = Array.from(event.target.files || []);
+  function handleFiles(event: ChangeEvent<HTMLInputElement>): void {
+    const files: File[] = event.target.files ? Array.from(event.target.files) : [];
 
     if (files.length === 0) return;
 
-    try {
-      setUploading(true);
-      setError("");
+    const acceptedFiles = files.filter((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "";
+      return [
+        "pdf",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "csv",
+        "txt",
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+        "tif",
+        "tiff",
+      ].includes(extension);
+    });
 
-      const uploadedDocuments = await Promise.all(files.map(readFileAsDataUrl));
-
-      onChange([...uploadedDocuments, ...documents]);
+    if (acceptedFiles.length === 0) {
+      setError("Please upload result documents only: PDF, Word, Excel, CSV, text, or image files.");
       event.target.value = "";
-    } catch {
-      setError("Some documents could not be loaded. Please try again.");
-    } finally {
-      setUploading(false);
+      return;
     }
+
+    setError("");
+    onChange([...acceptedFiles.map(createResultDocumentFromFile), ...documents]);
+    event.target.value = "";
   }
 
-  function removeDocument(documentId: string): void {
-    onChange(documents.filter((document) => document.id !== documentId));
+  function removeDocument(documentId: string | number): void {
+    onChange(documents.filter((document) => String(document.id) !== String(documentId)));
   }
 
   return (
@@ -1490,17 +1927,13 @@ function ResultDocumentsUpload({
       <label className="flex min-h-[155px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-5 text-center transition hover:bg-blue-100">
         <input
           type="file"
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.tif,.tiff"
           multiple
           onChange={handleFiles}
           className="hidden"
         />
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-sm">
-          {uploading ? (
-            <Loader2 size={22} className="animate-spin" />
-          ) : (
-            <UploadCloud size={22} />
-          )}
+          <UploadCloud size={22} />
         </div>
         <p className="mt-3 text-sm font-bold text-blue-900">
           Upload result documents
@@ -1521,7 +1954,7 @@ function ResultDocumentsUpload({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {documents.map((document) => (
             <div
-              key={document.id}
+              key={String(document.id)}
               className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
             >
               <div className="flex items-center gap-3 p-3">
@@ -1536,14 +1969,16 @@ function ResultDocumentsUpload({
                     {formatFileSize(document.size)} · {formatStatus(document.category)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeDocument(document.id)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-red-500 transition hover:bg-red-50"
-                  aria-label={`Remove ${document.name}`}
-                >
-                  <Trash2 size={14} />
-                </button>
+                {document.file && (
+                  <button
+                    type="button"
+                    onClick={() => removeDocument(document.id)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-red-500 transition hover:bg-red-50"
+                    aria-label={`Remove ${document.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
