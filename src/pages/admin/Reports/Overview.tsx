@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   AlertTriangle,
   BarChart3,
@@ -18,7 +20,6 @@ import {
   LockKeyhole,
   MapPin,
   RefreshCcw,
-  ScanSearch,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -50,6 +51,15 @@ type AlertState = {
 };
 
 type DateRange = "7" | "30" | "90" | "365";
+
+type ReportType =
+  | "executive_summary"
+  | "document_usage"
+  | "soil_geological"
+  | "samples_laboratory"
+  | "study_area"
+  | "security_workflow"
+  | "upload_activity";
 
 type ReportFilters = {
   province: string;
@@ -170,6 +180,55 @@ type AdvancedReportData = {
   activity_chart: ActivityChartRow[];
   document_types: DocumentTypeRow[];
 };
+
+const reportTypeOptions: Array<{
+  value: ReportType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "executive_summary",
+    label: "Executive Summary Report",
+    description:
+      "general document activity, workflow status, security alerts, and project reporting information.",
+  },
+  {
+    value: "document_usage",
+    label: "Document Usage Report",
+    description:
+      "document usage, classifications, document statuses, and scan readiness.",
+  },
+  {
+    value: "soil_geological",
+    label: "Soil & Geological Report",
+    description:
+      "soil profiles, geological findings, rock samples, boreholes, and field survey records.",
+  },
+  {
+    value: "samples_laboratory",
+    label: "Samples & Laboratory Report",
+    description:
+      "sample collection records, laboratory information, material types, and sample statuses.",
+  },
+  {
+    value: "study_area",
+    label: "Study Area Report",
+    description:
+      "field study locations, project areas, districts, sectors, and study area statuses.",
+  },
+  {
+    value: "security_workflow",
+    label: "Security Workflow Report",
+    description:
+      "clean, quarantined, unsafe, rejected, blocked, and security workflow information.",
+  },
+  {
+    value: "upload_activity",
+    label: "Upload Activity Report",
+    description:
+      "document upload and update activity for the selected reporting period.",
+  },
+];
 
 const emptyFilters: ReportFilters = {
   province: "",
@@ -347,6 +406,17 @@ function getProjectLabel(project: ProjectSummary): string {
   return projectObject.code ? `${name} (${projectObject.code})` : name;
 }
 
+function getSelectedProjectName(
+  projectId: string,
+  projects: ProjectSummary[]
+): string {
+  if (!projectId) return "";
+
+  const project = projects.find((item) => String(item.id) === String(projectId));
+
+  return project ? getProjectLabel(project) : `Project ${projectId}`;
+}
+
 function normalizeReportData(payload: AdvancedReportData): AdvancedReportData {
   return {
     ...emptyReportData,
@@ -369,6 +439,481 @@ function normalizeReportData(payload: AdvancedReportData): AdvancedReportData {
       ? payload.document_types
       : [],
   };
+}
+
+function pdfText(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  return String(value);
+}
+
+function formatPdfDate(date?: string | null): string {
+  if (!date) return "-";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "-";
+
+  return parsed.toLocaleDateString();
+}
+
+function getReportOption(reportType: ReportType) {
+  return (
+    reportTypeOptions.find((option) => option.value === reportType) ||
+    reportTypeOptions[0]
+  );
+}
+
+function getSmartReportTitle(
+  reportType: ReportType,
+  filters: ReportFilters,
+  projects: ProjectSummary[]
+): string {
+  const selectedReport = getReportOption(reportType);
+  const projectName = getSelectedProjectName(filters.project_id, projects);
+
+  if (filters.document_type) {
+    return `${getReadableStatus(filters.document_type)} Documents Report`;
+  }
+
+  if (filters.record_type) {
+    return `${getReadableStatus(filters.record_type)} Geological Records Report`;
+  }
+
+  if (projectName) {
+    return `${projectName} - ${selectedReport.label}`;
+  }
+
+  if (filters.district && filters.sector) {
+    return `${filters.district} / ${filters.sector} - ${selectedReport.label}`;
+  }
+
+  if (filters.district) {
+    return `${filters.district} - ${selectedReport.label}`;
+  }
+
+  if (filters.province) {
+    return `${filters.province} - ${selectedReport.label}`;
+  }
+
+  return selectedReport.label;
+}
+
+function getActiveFilterItems(
+  filters: ReportFilters,
+  rangeDays: DateRange,
+  projects: ProjectSummary[]
+): string[] {
+  const activeFilters: string[] = [`Last ${rangeDays} days`];
+  const projectName = getSelectedProjectName(filters.project_id, projects);
+
+  if (projectName) activeFilters.push(`Project: ${projectName}`);
+  if (filters.document_type) {
+    activeFilters.push(
+      `Document Type: ${getReadableStatus(filters.document_type)}`
+    );
+  }
+  if (filters.record_type) {
+    activeFilters.push(
+      `Geo Record Type: ${getReadableStatus(filters.record_type)}`
+    );
+  }
+  if (filters.status) {
+    activeFilters.push(`Status: ${getReadableStatus(filters.status)}`);
+  }
+  if (filters.province) activeFilters.push(`Province/City: ${filters.province}`);
+  if (filters.district) activeFilters.push(`District: ${filters.district}`);
+  if (filters.sector) activeFilters.push(`Sector: ${filters.sector}`);
+  if (filters.search) activeFilters.push(`Search: ${filters.search}`);
+  if (filters.clean_only) activeFilters.push("Clean records only");
+
+  return activeFilters;
+}
+
+function getFilterRowsForPdf(
+  filters: ReportFilters,
+  rangeDays: DateRange,
+  projects: ProjectSummary[],
+  reportTitle: string
+): string[][] {
+  const rows: string[][] = [
+    ["Report", reportTitle],
+    ["Period", `Last ${rangeDays} days`],
+  ];
+
+  const projectName = getSelectedProjectName(filters.project_id, projects);
+
+  if (projectName) rows.push(["Project", projectName]);
+  if (filters.document_type) {
+    rows.push(["Document Type", getReadableStatus(filters.document_type)]);
+  }
+  if (filters.record_type) {
+    rows.push(["Geo Record Type", getReadableStatus(filters.record_type)]);
+  }
+  if (filters.status) rows.push(["Status", getReadableStatus(filters.status)]);
+  if (filters.province) rows.push(["Province / City", filters.province]);
+  if (filters.district) rows.push(["District", filters.district]);
+  if (filters.sector) rows.push(["Sector", filters.sector]);
+  if (filters.search) rows.push(["Search", filters.search]);
+
+  rows.push(["Clean Filter", filters.clean_only ? "Enabled" : "Disabled"]);
+
+  return rows;
+}
+
+async function loadLogoDataUrl(): Promise<string | null> {
+  const logoPaths = [
+    "/migeco-logo.png",
+    "/migeco-logo.jpg",
+    "/logo.png",
+    "/logo.jpg",
+  ];
+
+  for (const logoPath of logoPaths) {
+    try {
+      const response = await fetch(logoPath);
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const blob = await response.blob();
+
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          resolve(typeof reader.result === "string" ? reader.result : null);
+        };
+
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function getImageFormat(dataUrl: string): "PNG" | "JPEG" {
+  return dataUrl.includes("image/jpeg") || dataUrl.includes("image/jpg")
+    ? "JPEG"
+    : "PNG";
+}
+
+function getAutoTableFinalY(doc: jsPDF): number {
+  const typedDoc = doc as jsPDF & {
+    lastAutoTable?: {
+      finalY?: number;
+    };
+  };
+
+  return typedDoc.lastAutoTable?.finalY || 45;
+}
+
+function addAdministrativeHeader(
+  doc: jsPDF,
+  title: string,
+  logoDataUrl: string | null
+): void {
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  if (logoDataUrl) {
+    try {
+      doc.addImage(
+        logoDataUrl,
+        getImageFormat(logoDataUrl),
+        14,
+        10,
+        18,
+        18
+      );
+    } catch {
+      // Continue without logo.
+    }
+  }
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("MIGECO Ltd", logoDataUrl ? 37 : 14, 16);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Document Management System", logoDataUrl ? 37 : 14, 22);
+  doc.text("Administrative Report", logoDataUrl ? 37 : 14, 27);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(title, pageWidth - 14, 17, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(new Date().toLocaleDateString(), pageWidth - 14, 24, {
+    align: "right",
+  });
+
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, 35, pageWidth - 14, 35);
+}
+
+function addSectionTitle(doc: jsPDF, title: string, y: number): number {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(title, 14, y);
+
+  doc.setDrawColor(226, 232, 240);
+  doc.line(14, y + 2, 196, y + 2);
+
+  return y + 6;
+}
+
+function addAdministrativeIntro(
+  doc: jsPDF,
+  reportTitle: string,
+  reportDescription: string,
+  preparedBy: string,
+  preparedRole: string,
+  rangeDays: DateRange,
+  y: number
+): number {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(reportTitle, 14, y);
+
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+
+  const intro = `This administrative report summarizes ${reportDescription} The report is generated from the MIGECO Document Management System using the selected filters and the access rights of the logged-in user.`;
+
+  const introLines = doc.splitTextToSize(intro, 182);
+  doc.text(introLines, 14, y);
+
+  y += introLines.length * 4 + 4;
+
+  autoTable(doc, {
+    startY: y,
+    theme: "grid",
+    styles: {
+      fontSize: 7,
+      cellPadding: 1.4,
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: "bold",
+    },
+    head: [["Prepared By", "Role", "Period"]],
+    body: [[preparedBy, preparedRole, `Last ${rangeDays} days`]],
+    margin: {
+      left: 14,
+      right: 14,
+    },
+  });
+
+  return getAutoTableFinalY(doc) + 7;
+}
+
+function getAdministrativeSummaryRows(summary: ReportSummary): string[][] {
+  return [
+    ["Total Documents", formatNumber(summary.total_documents)],
+    ["Clean Export Ready", formatNumber(summary.clean_export_ready_documents)],
+    ["Clean Documents", formatNumber(summary.clean_documents)],
+    ["Geo Records", formatNumber(summary.geological_records)],
+    ["Soil Records", formatNumber(summary.soil_records)],
+    ["Study Areas", formatNumber(summary.study_areas)],
+    ["Samples", formatNumber(summary.samples)],
+    ["Blocked / Unsafe", formatNumber(summary.blocked_documents)],
+  ];
+}
+
+function getAdministrativeDetailTitle(reportType: ReportType): string {
+  if (reportType === "document_usage") return "Document Usage Details";
+  if (reportType === "soil_geological") return "Soil & Geological Details";
+  if (reportType === "samples_laboratory") return "Samples & Laboratory Details";
+  if (reportType === "study_area") return "Study Area Details";
+  if (reportType === "security_workflow") return "Security Workflow Details";
+  if (reportType === "upload_activity") return "Upload Activity Details";
+
+  return "Administrative Notes";
+}
+
+function getAdministrativeDetailHead(reportType: ReportType): string[][] {
+  if (reportType === "document_usage") {
+    return [["Code", "Document", "Type", "Status", "Scan"]];
+  }
+
+  if (reportType === "soil_geological") {
+    return [["Type", "Site / Survey", "Geologist", "District", "Date"]];
+  }
+
+  if (reportType === "samples_laboratory") {
+    return [["Code", "Sample", "Type", "Material", "Status"]];
+  }
+
+  if (reportType === "study_area") {
+    return [["Code", "Name", "Project", "District", "Status"]];
+  }
+
+  if (reportType === "security_workflow") {
+    return [["Level", "Title", "Message"]];
+  }
+
+  if (reportType === "upload_activity") {
+    return [["Period", "Uploads", "Updates"]];
+  }
+
+  return [["Level", "Title", "Message"]];
+}
+
+function getAdministrativeDetailBody(
+  reportType: ReportType,
+  normalized: AdvancedReportData
+): string[][] {
+  const maxRows = 5;
+
+  if (reportType === "document_usage") {
+    return normalized.documents.length > 0
+      ? normalized.documents.slice(0, maxRows).map((document) => [
+          pdfText(document.document_code),
+          pdfText(document.title || document.original_file_name),
+          getReadableStatus(document.document_type),
+          getReadableStatus(document.status),
+          getReadableStatus(document.scan_status),
+        ])
+      : [["-", "No documents found", "-", "-", "-"]];
+  }
+
+  if (reportType === "soil_geological") {
+    return normalized.geological_records.length > 0
+      ? normalized.geological_records.slice(0, maxRows).map((record) => [
+          getReadableStatus(record.record_type),
+          pdfText(
+            record.site_name || record.survey_name || record.document?.title
+          ),
+          pdfText(record.geologist_name),
+          pdfText(record.district),
+          formatPdfDate(record.created_at),
+        ])
+      : [["-", "No geological records found", "-", "-", "-"]];
+  }
+
+  if (reportType === "samples_laboratory") {
+    return normalized.samples.length > 0
+      ? normalized.samples.slice(0, maxRows).map((sample) => [
+          pdfText(sample.sample_code),
+          pdfText(sample.sample_name),
+          pdfText(sample.sample_type),
+          pdfText(sample.material),
+          getReadableStatus(sample.status),
+        ])
+      : [["-", "No samples found", "-", "-", "-"]];
+  }
+
+  if (reportType === "study_area") {
+    return normalized.study_areas.length > 0
+      ? normalized.study_areas.slice(0, maxRows).map((area) => [
+          pdfText(area.code),
+          pdfText(area.name),
+          pdfText(area.project_name),
+          pdfText(area.district),
+          getReadableStatus(area.status),
+        ])
+      : [["-", "No study areas found", "-", "-", "-"]];
+  }
+
+  if (reportType === "security_workflow") {
+    return normalized.notifications.length > 0
+      ? normalized.notifications.slice(0, maxRows).map((notification) => [
+          getReadableStatus(notification.level),
+          notification.title,
+          notification.message,
+        ])
+      : [["Info", "No alerts", "No security workflow alert found."]];
+  }
+
+  if (reportType === "upload_activity") {
+    return normalized.activity_chart.length > 0
+      ? normalized.activity_chart.slice(0, maxRows).map((row) => [
+          row.name,
+          formatNumber(row.uploads),
+          formatNumber(row.updates),
+        ])
+      : [["-", "0", "0"]];
+  }
+
+  return normalized.notifications.length > 0
+    ? normalized.notifications.slice(0, maxRows).map((notification) => [
+        getReadableStatus(notification.level),
+        notification.title,
+        notification.message,
+      ])
+    : [
+        [
+          "Success",
+          "Report workflow looks clean",
+          "No urgent report notification found.",
+        ],
+      ];
+}
+
+function addSignatureSection(
+  doc: jsPDF,
+  preparedBy: string,
+  preparedRole: string,
+  startY: number
+): void {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const y = Math.min(startY, pageHeight - 52);
+
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, y - 5, 196, y - 5);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text("Prepared By", 14, y);
+  doc.text("Reviewed By", 78, y);
+  doc.text("Approved By", 142, y);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(51, 65, 85);
+
+  doc.text(preparedBy, 14, y + 7);
+  doc.text(preparedRole, 14, y + 12);
+  doc.text("Signature: ______________", 14, y + 18);
+
+  doc.text("Name: __________________", 78, y + 7);
+  doc.text("Signature: ______________", 78, y + 14);
+  doc.text("Date: __________________", 78, y + 21);
+
+  doc.text("Name: __________________", 142, y + 7);
+  doc.text("Signature: ______________", 142, y + 14);
+  doc.text("Date: __________________", 142, y + 21);
+}
+
+function addAdministrativeFooter(doc: jsPDF): void {
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text("MIGECO DMS - Administrative Report", 14, pageHeight - 8);
+  doc.text("Page 1 of 1", 180, pageHeight - 8);
 }
 
 function Header({
@@ -514,7 +1059,7 @@ function FilterInput({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block">
@@ -612,9 +1157,24 @@ function ChartTooltip({
 export default function ReportsOverview() {
   const [data, setData] = useState<AdvancedReportData>(emptyReportData);
   const [rangeDays, setRangeDays] = useState<DateRange>("30");
+  const [reportType, setReportType] =
+    useState<ReportType>("executive_summary");
   const [filters, setFilters] = useState<ReportFilters>(emptyFilters);
   const [loading, setLoading] = useState<boolean>(true);
   const [alert, setAlert] = useState<AlertState | null>(null);
+
+  const selectedReport = getReportOption(reportType);
+  const smartReportTitle = getSmartReportTitle(
+    reportType,
+    filters,
+    data.projects
+  );
+  const activeFilterItems = getActiveFilterItems(
+    filters,
+    rangeDays,
+    data.projects
+  );
+  const summary = data.summary;
 
   const queryParams = useMemo(
     () => buildQueryParams(rangeDays, filters),
@@ -660,6 +1220,7 @@ export default function ReportsOverview() {
   function clearFilters(): void {
     setFilters(emptyFilters);
     setRangeDays("30");
+    setReportType("executive_summary");
   }
 
   async function exportCleanReport(): Promise<void> {
@@ -686,39 +1247,142 @@ export default function ReportsOverview() {
       );
 
       const normalized = normalizeReportData(payload);
+      const reportSummary = normalized.summary;
 
-      const exportPayload = {
-        generated_at: new Date().toISOString(),
-        note: "Export generated using clean filter before export.",
-        filters: normalized.filters,
-        summary: normalized.summary,
-        documents: normalized.documents,
-        geological_records: normalized.geological_records,
-        study_areas: normalized.study_areas,
-        samples: normalized.samples,
-      };
+      const loggedInUser = normalized.user || data.user;
+      const preparedBy = getUserName(loggedInUser);
+      const preparedRole = getRoleName(loggedInUser);
 
-      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
-        type: "application/json",
+      const exportedReportTitle = getSmartReportTitle(
+        reportType,
+        exportFilters,
+        normalized.projects
+      );
+
+      const logoDataUrl = await loadLogoDataUrl();
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
       });
 
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      addAdministrativeHeader(doc, exportedReportTitle, logoDataUrl);
 
-      link.href = url;
-      link.download = `migeco-clean-report-${getLocalDateKey(
-        new Date()
-      )}.json`;
+      let y = 45;
 
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      y = addAdministrativeIntro(
+        doc,
+        exportedReportTitle,
+        selectedReport.description,
+        preparedBy,
+        preparedRole,
+        rangeDays,
+        y
+      );
 
-      window.URL.revokeObjectURL(url);
+      y = addSectionTitle(doc, "Applied Filters", y);
+
+      autoTable(doc, {
+        startY: y,
+        theme: "grid",
+        styles: {
+          fontSize: 6.8,
+          cellPadding: 1.15,
+          lineColor: [226, 232, 240],
+          lineWidth: 0.1,
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+        },
+        head: [["Filter", "Value"]],
+        body: getFilterRowsForPdf(
+          exportFilters,
+          rangeDays,
+          normalized.projects,
+          exportedReportTitle
+        ),
+        margin: {
+          left: 14,
+          right: 14,
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 132 },
+        },
+      });
+
+      y = getAutoTableFinalY(doc) + 7;
+
+      y = addSectionTitle(doc, "Report Summary", y);
+
+      autoTable(doc, {
+        startY: y,
+        theme: "grid",
+        styles: {
+          fontSize: 6.8,
+          cellPadding: 1.15,
+          lineColor: [226, 232, 240],
+          lineWidth: 0.1,
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+        },
+        head: [["Metric", "Value"]],
+        body: getAdministrativeSummaryRows(reportSummary),
+        margin: {
+          left: 14,
+          right: 14,
+        },
+        columnStyles: {
+          0: { cellWidth: 120 },
+          1: { cellWidth: 62 },
+        },
+      });
+
+      y = getAutoTableFinalY(doc) + 7;
+
+      y = addSectionTitle(doc, getAdministrativeDetailTitle(reportType), y);
+
+      autoTable(doc, {
+        startY: y,
+        theme: "grid",
+        styles: {
+          fontSize: 6.3,
+          cellPadding: 1.05,
+          overflow: "linebreak",
+          lineColor: [226, 232, 240],
+          lineWidth: 0.1,
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+        },
+        head: getAdministrativeDetailHead(reportType),
+        body: getAdministrativeDetailBody(reportType, normalized),
+        margin: {
+          left: 14,
+          right: 14,
+        },
+      });
+
+      const signatureY = getAutoTableFinalY(doc) + 12;
+
+      addSignatureSection(doc, preparedBy, preparedRole, signatureY);
+      addAdministrativeFooter(doc);
+
+      doc.save(
+        `migeco-administrative-${reportType}-${getLocalDateKey(new Date())}.pdf`
+      );
 
       setAlert({
         type: "success",
-        message: "Clean filtered report exported successfully.",
+        message: `${exportedReportTitle} exported successfully as a simple one-page administrative PDF.`,
       });
     } catch (error) {
       setAlert({
@@ -726,12 +1390,10 @@ export default function ReportsOverview() {
         message:
           error instanceof Error
             ? error.message
-            : "Unable to export clean report.",
+            : "Unable to export PDF report.",
       });
     }
   }
-
-  const summary = data.summary;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
@@ -775,13 +1437,12 @@ export default function ReportsOverview() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">
-                    Advanced Report Builder
+                    Administrative Report Builder
                   </h2>
 
                   <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-                    Filter reports by region, project, soil records, geo
-                    documents, clean security status, and field survey records
-                    before export.
+                    Select report type and filters. The page and exported PDF
+                    will show only records matching your selected filters.
                   </p>
                 </div>
 
@@ -815,12 +1476,28 @@ export default function ReportsOverview() {
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Download size={16} />
-                    Export clean report
+                    Export One Page PDF
                   </button>
                 </div>
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <FilterInput label="Report Type">
+                  <select
+                    value={reportType}
+                    onChange={(event) =>
+                      setReportType(event.target.value as ReportType)
+                    }
+                    className={inputClass()}
+                  >
+                    {reportTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </FilterInput>
+
                 <FilterInput label="Province / City">
                   <input
                     value={filters.province}
@@ -996,9 +1673,33 @@ export default function ReportsOverview() {
                 </label>
 
                 <span className="text-xs text-slate-400">
-                  Recommended: keep clean filter enabled when exporting official
-                  reports.
+                  Recommended for administrative reports.
                 </span>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-blue-600">
+                Current Filtered Report
+              </p>
+
+              <h3 className="mt-1 text-base font-bold text-slate-900">
+                {smartReportTitle}
+              </h3>
+
+              <p className="mt-1 max-w-5xl text-xs leading-5 text-slate-600">
+                {selectedReport.description}
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeFilterItems.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-blue-200 bg-white px-3 py-1 text-[11px] font-semibold text-blue-700"
+                  >
+                    {item}
+                  </span>
+                ))}
               </div>
             </section>
 
@@ -1018,72 +1719,42 @@ export default function ReportsOverview() {
               </div>
             ) : (
               <>
-                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    title="Clean Export Ready"
-                    value={formatNumber(
-                      summary.clean_export_ready_documents
-                    )}
-                    description="active, clean and safe records"
-                    icon={ShieldCheck}
-                  />
+                {reportType === "executive_summary" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Clean Export Ready"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="active, clean and safe records"
+                        icon={ShieldCheck}
+                      />
 
-                  <MetricCard
-                    title="Geo Records"
-                    value={formatNumber(summary.geological_records)}
-                    description="field findings and geo metadata"
-                    icon={MapPin}
-                  />
+                      <MetricCard
+                        title="Total Documents"
+                        value={formatNumber(summary.total_documents)}
+                        description="documents matching filters"
+                        icon={FileText}
+                      />
 
-                  <MetricCard
-                    title="Soil Records"
-                    value={formatNumber(summary.soil_records)}
-                    description="soil geo records and samples"
-                    icon={FlaskConical}
-                  />
+                      <MetricCard
+                        title="Geo Records"
+                        value={formatNumber(summary.geological_records)}
+                        description="field findings and geo metadata"
+                        icon={MapPin}
+                      />
 
-                  <MetricCard
-                    title="Storage Used"
-                    value={formatBytes(summary.storage_used_bytes)}
-                    description="filtered uploaded file size"
-                    icon={Database}
-                  />
-                </section>
+                      <MetricCard
+                        title="Blocked / Unsafe"
+                        value={formatNumber(summary.blocked_documents)}
+                        description="needs review before use"
+                        icon={ShieldAlert}
+                      />
+                    </section>
 
-                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    title="Total Documents"
-                    value={formatNumber(summary.total_documents)}
-                    description="documents matching filters"
-                    icon={FileText}
-                  />
-
-                  <MetricCard
-                    title="Uploads"
-                    value={formatNumber(summary.uploads_in_range)}
-                    description={`in last ${rangeDays} days`}
-                    icon={UploadCloud}
-                  />
-
-                  <MetricCard
-                    title="Study Areas"
-                    value={formatNumber(summary.study_areas)}
-                    description="field survey locations"
-                    icon={MapPin}
-                  />
-
-                  <MetricCard
-                    title="Blocked / Unsafe"
-                    value={formatNumber(summary.blocked_documents)}
-                    description="needs review before use"
-                    icon={ShieldAlert}
-                  />
-                </section>
-
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
+                    <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
                         <h3 className="text-sm font-bold text-slate-900">
                           Document Activity
                         </h3>
@@ -1091,311 +1762,581 @@ export default function ReportsOverview() {
                         <p className="mt-1 text-xs text-slate-400">
                           Upload and update activity for selected filters
                         </p>
-                      </div>
-                    </div>
 
-                    <div className="mt-5 h-[280px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart
-                          data={data.activity_chart}
-                          margin={{
-                            top: 10,
-                            right: 8,
-                            left: -22,
-                            bottom: 0,
-                          }}
-                        >
-                          <defs>
-                            <linearGradient
-                              id="reportsUpdatesGradient"
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
+                        <div className="mt-5 h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart
+                              data={data.activity_chart}
+                              margin={{
+                                top: 10,
+                                right: 8,
+                                left: -22,
+                                bottom: 0,
+                              }}
                             >
-                              <stop
-                                offset="0%"
-                                stopColor="#2563eb"
-                                stopOpacity={0.18}
-                              />
-                              <stop
-                                offset="100%"
-                                stopColor="#2563eb"
-                                stopOpacity={0}
-                              />
-                            </linearGradient>
-
-                            <linearGradient
-                              id="reportsUploadsGradient"
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
-                            >
-                              <stop
-                                offset="0%"
-                                stopColor="#8b5cf6"
-                                stopOpacity={0.16}
-                              />
-                              <stop
-                                offset="100%"
-                                stopColor="#8b5cf6"
-                                stopOpacity={0}
-                              />
-                            </linearGradient>
-                          </defs>
-
-                          <CartesianGrid
-                            vertical={false}
-                            stroke="#e2e8f0"
-                            strokeDasharray="4 4"
-                          />
-
-                          <XAxis
-                            dataKey="name"
-                            axisLine={false}
-                            tickLine={false}
-                            tick={{ fill: "#94a3b8", fontSize: 10 }}
-                            dy={8}
-                          />
-
-                          <YAxis
-                            axisLine={false}
-                            tickLine={false}
-                            allowDecimals={false}
-                            tick={{ fill: "#94a3b8", fontSize: 10 }}
-                          />
-
-                          <Tooltip content={<ChartTooltip />} />
-
-                          <Area
-                            type="monotone"
-                            dataKey="updates"
-                            stroke="#2563eb"
-                            strokeWidth={2.5}
-                            fill="url(#reportsUpdatesGradient)"
-                            activeDot={{ r: 4 }}
-                          />
-
-                          <Area
-                            type="monotone"
-                            dataKey="uploads"
-                            stroke="#8b5cf6"
-                            strokeWidth={2.5}
-                            fill="url(#reportsUploadsGradient)"
-                            activeDot={{ r: 4 }}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Notifications
-                    </h3>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      Report alerts and required actions
-                    </p>
-
-                    <div className="mt-4 space-y-3">
-                      {data.notifications.map((notification) => (
-                        <NotificationCard
-                          key={notification.id}
-                          notification={notification}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-7">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Geo Documents by Region
-                    </h3>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      Documents matching selected province, district, sector or
-                      project
-                    </p>
-
-                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                          <tr>
-                            <th className="px-4 py-3">Document</th>
-                            <th className="px-4 py-3">Type</th>
-                            <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3">Scan</th>
-                          </tr>
-                        </thead>
-
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {data.documents.slice(0, 8).map((document) => (
-                            <tr key={document.id}>
-                              <td className="px-4 py-3">
-                                <p className="font-semibold text-slate-800">
-                                  {document.title || "Untitled document"}
-                                </p>
-
-                                <p className="mt-0.5 text-xs text-slate-400">
-                                  {document.document_code ||
-                                    document.original_file_name ||
-                                    "No code"}
-                                </p>
-                              </td>
-
-                              <td className="px-4 py-3 text-xs font-semibold text-slate-500">
-                                {getReadableStatus(document.document_type)}
-                              </td>
-
-                              <td className="px-4 py-3 text-xs font-semibold text-slate-500">
-                                {getReadableStatus(document.status)}
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <span
-                                  className={cn(
-                                    "rounded-full px-2 py-1 text-[11px] font-bold",
-                                    toLower(document.scan_status) === "clean"
-                                      ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-amber-50 text-amber-700"
-                                  )}
+                              <defs>
+                                <linearGradient
+                                  id="reportsUpdatesGradient"
+                                  x1="0"
+                                  y1="0"
+                                  x2="0"
+                                  y2="1"
                                 >
-                                  {getReadableStatus(document.scan_status)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
+                                  <stop
+                                    offset="0%"
+                                    stopColor="#2563eb"
+                                    stopOpacity={0.18}
+                                  />
+                                  <stop
+                                    offset="100%"
+                                    stopColor="#2563eb"
+                                    stopOpacity={0}
+                                  />
+                                </linearGradient>
 
-                          {data.documents.length === 0 && (
-                            <tr>
-                              <td
-                                colSpan={4}
-                                className="px-4 py-10 text-center text-sm text-slate-400"
-                              >
-                                No documents found for selected filters.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                                <linearGradient
+                                  id="reportsUploadsGradient"
+                                  x1="0"
+                                  y1="0"
+                                  x2="0"
+                                  y2="1"
+                                >
+                                  <stop
+                                    offset="0%"
+                                    stopColor="#8b5cf6"
+                                    stopOpacity={0.16}
+                                  />
+                                  <stop
+                                    offset="100%"
+                                    stopColor="#8b5cf6"
+                                    stopOpacity={0}
+                                  />
+                                </linearGradient>
+                              </defs>
 
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-5">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Soil & Geological Records
-                    </h3>
+                              <CartesianGrid
+                                vertical={false}
+                                stroke="#e2e8f0"
+                                strokeDasharray="4 4"
+                              />
 
-                    <p className="mt-1 text-xs text-slate-400">
-                      Soil, borehole, rock sample and field survey findings
-                    </p>
+                              <XAxis
+                                dataKey="name"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                                dy={8}
+                              />
 
-                    <div className="mt-4 space-y-3">
-                      {data.geological_records.slice(0, 7).map((record) => (
-                        <div
-                          key={record.id}
-                          className="rounded-xl border border-slate-200 bg-white p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-bold text-slate-800">
-                                {record.site_name ||
-                                  record.survey_name ||
-                                  record.document?.title ||
-                                  "Geological record"}
-                              </p>
+                              <YAxis
+                                axisLine={false}
+                                tickLine={false}
+                                allowDecimals={false}
+                                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                              />
 
-                              <p className="mt-1 text-xs text-slate-400">
-                                {getReadableStatus(record.record_type)} ·{" "}
-                                {record.district || "No district"} ·{" "}
-                                {record.sector || "No sector"}
-                              </p>
-                            </div>
+                              <Tooltip content={<ChartTooltip />} />
 
-                            <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">
-                              Geo
-                            </span>
-                          </div>
+                              <Area
+                                type="monotone"
+                                dataKey="updates"
+                                stroke="#2563eb"
+                                strokeWidth={2.5}
+                                fill="url(#reportsUpdatesGradient)"
+                                activeDot={{ r: 4 }}
+                              />
+
+                              <Area
+                                type="monotone"
+                                dataKey="uploads"
+                                stroke="#8b5cf6"
+                                strokeWidth={2.5}
+                                fill="url(#reportsUploadsGradient)"
+                                activeDot={{ r: 4 }}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
                         </div>
-                      ))}
+                      </div>
 
-                      {data.geological_records.length === 0 && (
-                        <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-center">
-                          <MapPin size={24} className="text-slate-300" />
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Administrative Notes
+                        </h3>
 
-                          <p className="mt-3 text-sm font-semibold text-slate-600">
-                            No geo records found
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            A geologist should upload findings after field
-                            survey.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-6">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Document Types
-                    </h3>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      Most common file classifications in selected report
-                    </p>
-
-                    <div className="mt-5 space-y-4">
-                      {data.document_types.map((row) => (
-                        <div key={row.name}>
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <span className="truncate text-xs font-semibold text-slate-600">
-                              {row.name}
-                            </span>
-
-                            <span className="shrink-0 text-[11px] font-bold text-slate-900">
-                              {row.count}
-                            </span>
-                          </div>
-
-                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className="h-full rounded-full bg-blue-600"
-                              style={{ width: `${row.percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-
-                      {data.document_types.length === 0 && (
-                        <p className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
-                          No document type data.
+                        <p className="mt-1 text-xs text-slate-400">
+                          Report alerts and required actions
                         </p>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-6">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Processing Health
-                    </h3>
+                        <div className="mt-4 space-y-3">
+                          {data.notifications.map((notification) => (
+                            <NotificationCard
+                              key={notification.id}
+                              notification={notification}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
 
-                    <p className="mt-1 text-xs text-slate-400">
-                      Clean scan, encryption, text readiness and AI workflow
-                    </p>
+                {reportType === "document_usage" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Total Documents"
+                        value={formatNumber(summary.total_documents)}
+                        description="documents matching filters"
+                        icon={FileText}
+                      />
 
-                    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <MetricCard
                         title="Clean Documents"
                         value={formatNumber(summary.clean_documents)}
                         description="passed antivirus scan"
                         icon={ShieldCheck}
+                      />
+
+                      <MetricCard
+                        title="Storage Used"
+                        value={formatBytes(summary.storage_used_bytes)}
+                        description="filtered uploaded file size"
+                        icon={Database}
+                      />
+
+                      <MetricCard
+                        title="Ready for Export"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="clean administrative records"
+                        icon={Download}
+                      />
+                    </section>
+
+                    <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-8">
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Document Usage Details
+                        </h3>
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Only document usage records matching your filters are
+                          shown here.
+                        </p>
+
+                        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                              <tr>
+                                <th className="px-4 py-3">Document</th>
+                                <th className="px-4 py-3">Type</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3">Scan</th>
+                              </tr>
+                            </thead>
+
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {data.documents.slice(0, 12).map((document) => (
+                                <tr key={document.id}>
+                                  <td className="px-4 py-3">
+                                    <p className="font-semibold text-slate-800">
+                                      {document.title || "Untitled document"}
+                                    </p>
+
+                                    <p className="mt-0.5 text-xs text-slate-400">
+                                      {document.document_code ||
+                                        document.original_file_name ||
+                                        "No code"}
+                                    </p>
+                                  </td>
+
+                                  <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                    {getReadableStatus(document.document_type)}
+                                  </td>
+
+                                  <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                    {getReadableStatus(document.status)}
+                                  </td>
+
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-2 py-1 text-[11px] font-bold",
+                                        toLower(document.scan_status) ===
+                                          "clean"
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-amber-50 text-amber-700"
+                                      )}
+                                    >
+                                      {getReadableStatus(document.scan_status)}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+
+                              {data.documents.length === 0 && (
+                                <tr>
+                                  <td
+                                    colSpan={4}
+                                    className="px-4 py-10 text-center text-sm text-slate-400"
+                                  >
+                                    No documents found for selected filters.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Document Types
+                        </h3>
+
+                        <p className="mt-1 text-xs text-slate-400">
+                          Most common document classifications
+                        </p>
+
+                        <div className="mt-5 space-y-4">
+                          {data.document_types.map((row) => (
+                            <div key={row.name}>
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <span className="truncate text-xs font-semibold text-slate-600">
+                                  {row.name}
+                                </span>
+
+                                <span className="shrink-0 text-[11px] font-bold text-slate-900">
+                                  {row.count}
+                                </span>
+                              </div>
+
+                              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full rounded-full bg-blue-600"
+                                  style={{ width: `${row.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+
+                          {data.document_types.length === 0 && (
+                            <p className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                              No document type data.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {reportType === "soil_geological" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Soil Records"
+                        value={formatNumber(summary.soil_records)}
+                        description="soil geo records and samples"
+                        icon={FlaskConical}
+                      />
+
+                      <MetricCard
+                        title="Geo Records"
+                        value={formatNumber(summary.geological_records)}
+                        description="geological findings"
+                        icon={MapPin}
+                      />
+
+                      <MetricCard
+                        title="Recent Geo Records"
+                        value={formatNumber(summary.recent_geo_records)}
+                        description={`in last ${rangeDays} days`}
+                        icon={BrainCircuit}
+                      />
+
+                      <MetricCard
+                        title="Clean Export Ready"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="safe records only"
+                        icon={ShieldCheck}
+                      />
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Soil & Geological Records
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Only soil profiles, geological findings, rock samples,
+                        boreholes, and field survey records matching your filters
+                        are shown.
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {data.geological_records.slice(0, 12).map((record) => (
+                          <div
+                            key={record.id}
+                            className="rounded-xl border border-slate-200 bg-white p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-800">
+                                  {record.site_name ||
+                                    record.survey_name ||
+                                    record.document?.title ||
+                                    "Geological record"}
+                                </p>
+
+                                <p className="mt-1 text-xs text-slate-400">
+                                  {getReadableStatus(record.record_type)} ·{" "}
+                                  {record.district || "No district"} ·{" "}
+                                  {record.sector || "No sector"}
+                                </p>
+                              </div>
+
+                              <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">
+                                Geo
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+
+                        {data.geological_records.length === 0 && (
+                          <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-center">
+                            <MapPin size={24} className="text-slate-300" />
+
+                            <p className="mt-3 text-sm font-semibold text-slate-600">
+                              No soil or geological records found
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              A geologist should upload findings after field
+                              survey.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {reportType === "samples_laboratory" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Samples"
+                        value={formatNumber(summary.samples)}
+                        description="sample records"
+                        icon={FlaskConical}
+                      />
+
+                      <MetricCard
+                        title="Soil Sample Records"
+                        value={formatNumber(summary.soil_sample_records)}
+                        description="soil sample records"
+                        icon={Database}
+                      />
+
+                      <MetricCard
+                        title="Clean Export Ready"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="safe administrative records"
+                        icon={ShieldCheck}
+                      />
+
+                      <MetricCard
+                        title="Uploads"
+                        value={formatNumber(summary.uploads_in_range)}
+                        description={`in last ${rangeDays} days`}
+                        icon={UploadCloud}
+                      />
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Samples & Laboratory Records
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Only sample and laboratory records matching your filters
+                        are shown here.
+                      </p>
+
+                      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                            <tr>
+                              <th className="px-4 py-3">Code</th>
+                              <th className="px-4 py-3">Sample</th>
+                              <th className="px-4 py-3">Type</th>
+                              <th className="px-4 py-3">Material</th>
+                              <th className="px-4 py-3">Status</th>
+                            </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {data.samples.slice(0, 12).map((sample) => (
+                              <tr key={sample.id}>
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {sample.sample_code || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 font-semibold text-slate-800">
+                                  {sample.sample_name || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {sample.sample_type || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {sample.material || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {getReadableStatus(sample.status)}
+                                </td>
+                              </tr>
+                            ))}
+
+                            {data.samples.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan={5}
+                                  className="px-4 py-10 text-center text-sm text-slate-400"
+                                >
+                                  No sample or laboratory records found.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {reportType === "study_area" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Study Areas"
+                        value={formatNumber(summary.study_areas)}
+                        description="field survey locations"
+                        icon={MapPin}
+                      />
+
+                      <MetricCard
+                        title="Active Projects"
+                        value={formatNumber(summary.active_projects)}
+                        description="active project workspaces"
+                        icon={FolderOpen}
+                      />
+
+                      <MetricCard
+                        title="Geo Records"
+                        value={formatNumber(summary.geological_records)}
+                        description="linked geo records"
+                        icon={BrainCircuit}
+                      />
+
+                      <MetricCard
+                        title="Clean Export Ready"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="safe records only"
+                        icon={ShieldCheck}
+                      />
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Study Area Records
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Only study area records matching your filters are shown
+                        here.
+                      </p>
+
+                      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                            <tr>
+                              <th className="px-4 py-3">Code</th>
+                              <th className="px-4 py-3">Name</th>
+                              <th className="px-4 py-3">Project</th>
+                              <th className="px-4 py-3">District</th>
+                              <th className="px-4 py-3">Status</th>
+                            </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {data.study_areas.slice(0, 12).map((area) => (
+                              <tr key={area.id}>
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {area.code || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 font-semibold text-slate-800">
+                                  {area.name || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {area.project_name || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {area.district || "-"}
+                                </td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                  {getReadableStatus(area.status)}
+                                </td>
+                              </tr>
+                            ))}
+
+                            {data.study_areas.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan={5}
+                                  className="px-4 py-10 text-center text-sm text-slate-400"
+                                >
+                                  No study area records found.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {reportType === "security_workflow" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Clean Documents"
+                        value={formatNumber(summary.clean_documents)}
+                        description="passed antivirus scan"
+                        icon={ShieldCheck}
+                      />
+
+                      <MetricCard
+                        title="Quarantined"
+                        value={formatNumber(summary.quarantined_documents)}
+                        description="waiting security check"
+                        icon={ShieldAlert}
                       />
 
                       <MetricCard
@@ -1406,55 +2347,174 @@ export default function ReportsOverview() {
                       />
 
                       <MetricCard
-                        title="Ready for Export"
-                        value={formatNumber(
-                          summary.clean_export_ready_documents
-                        )}
-                        description="official clean filter"
-                        icon={Download}
+                        title="Blocked / Unsafe"
+                        value={formatNumber(summary.blocked_documents)}
+                        description="needs review"
+                        icon={LockKeyhole}
+                      />
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Security Workflow Details
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Only security workflow alerts and actions matching your
+                        filters are shown here.
+                      </p>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {data.notifications.map((notification) => (
+                          <NotificationCard
+                            key={notification.id}
+                            notification={notification}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {reportType === "upload_activity" && (
+                  <>
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <MetricCard
+                        title="Uploads"
+                        value={formatNumber(summary.uploads_in_range)}
+                        description={`in last ${rangeDays} days`}
+                        icon={UploadCloud}
                       />
 
                       <MetricCard
-                        title="Recent Geo Records"
-                        value={formatNumber(summary.recent_geo_records)}
+                        title="Updates"
+                        value={formatNumber(summary.updates_in_range)}
                         description={`in last ${rangeDays} days`}
-                        icon={BrainCircuit}
+                        icon={RefreshCcw}
                       />
-                    </div>
 
-                    <div className="mt-4 grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
-                        <ScanSearch
-                          size={18}
-                          className="mx-auto text-blue-600"
-                        />
-                        <p className="mt-2 text-xs font-bold text-slate-700">
-                          Text Ready
-                        </p>
-                      </div>
+                      <MetricCard
+                        title="Total Documents"
+                        value={formatNumber(summary.total_documents)}
+                        description="matching selected filters"
+                        icon={FileText}
+                      />
 
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
-                        <LockKeyhole
-                          size={18}
-                          className="mx-auto text-blue-600"
-                        />
-                        <p className="mt-2 text-xs font-bold text-slate-700">
-                          Encrypted
-                        </p>
-                      </div>
+                      <MetricCard
+                        title="Storage Used"
+                        value={formatBytes(summary.storage_used_bytes)}
+                        description="filtered uploaded size"
+                        icon={Database}
+                      />
+                    </section>
 
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
-                        <ShieldCheck
-                          size={18}
-                          className="mx-auto text-blue-600"
-                        />
-                        <p className="mt-2 text-xs font-bold text-slate-700">
-                          Safe
-                        </p>
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Upload & Update Activity
+                      </h3>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Only upload and update activity matching your filters is
+                        shown here.
+                      </p>
+
+                      <div className="mt-5 h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={data.activity_chart}
+                            margin={{
+                              top: 10,
+                              right: 8,
+                              left: -22,
+                              bottom: 0,
+                            }}
+                          >
+                            <defs>
+                              <linearGradient
+                                id="uploadActivityUpdatesGradient"
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="0%"
+                                  stopColor="#2563eb"
+                                  stopOpacity={0.18}
+                                />
+                                <stop
+                                  offset="100%"
+                                  stopColor="#2563eb"
+                                  stopOpacity={0}
+                                />
+                              </linearGradient>
+
+                              <linearGradient
+                                id="uploadActivityUploadsGradient"
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="0%"
+                                  stopColor="#8b5cf6"
+                                  stopOpacity={0.16}
+                                />
+                                <stop
+                                  offset="100%"
+                                  stopColor="#8b5cf6"
+                                  stopOpacity={0}
+                                />
+                              </linearGradient>
+                            </defs>
+
+                            <CartesianGrid
+                              vertical={false}
+                              stroke="#e2e8f0"
+                              strokeDasharray="4 4"
+                            />
+
+                            <XAxis
+                              dataKey="name"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fill: "#94a3b8", fontSize: 10 }}
+                              dy={8}
+                            />
+
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              allowDecimals={false}
+                              tick={{ fill: "#94a3b8", fontSize: 10 }}
+                            />
+
+                            <Tooltip content={<ChartTooltip />} />
+
+                            <Area
+                              type="monotone"
+                              dataKey="updates"
+                              stroke="#2563eb"
+                              strokeWidth={2.5}
+                              fill="url(#uploadActivityUpdatesGradient)"
+                              activeDot={{ r: 4 }}
+                            />
+
+                            <Area
+                              type="monotone"
+                              dataKey="uploads"
+                              stroke="#8b5cf6"
+                              strokeWidth={2.5}
+                              fill="url(#uploadActivityUploadsGradient)"
+                              activeDot={{ r: 4 }}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
                       </div>
-                    </div>
-                  </div>
-                </section>
+                    </section>
+                  </>
+                )}
               </>
             )}
           </div>
