@@ -119,16 +119,7 @@ const reportTabs = [
     path: "/reports/depreport",
     icon: UsersRound,
   },
-  {
-    label: "Versioning",
-    path: "/reports/versioningrep",
-    icon: GitBranch,
-  },
-  {
-    label: "Access & Permissions",
-    path: "/reports/accessreport",
-    icon: ShieldCheck,
-  },
+  
 ];
 
 function cn(...classes: Array<string | false | null | undefined>): string {

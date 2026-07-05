@@ -8,9 +8,11 @@ import {
   Filter,
   FlaskConical,
   Loader2,
+  MapPin,
   Microscope,
   Paperclip,
   Plus,
+  Navigation,
   RefreshCcw,
   Search,
   TestTube2,
@@ -57,8 +59,29 @@ type ResultDocument = {
   laboratoryResultId?: string | number | null;
 };
 
+type ProjectOption = {
+  id: string | number;
+  name: string;
+  code?: string;
+  studyArea?: string;
+};
+
+type BackendProject = {
+  id?: string | number;
+  name?: string | null;
+  title?: string | null;
+  project_name?: string | null;
+  projectName?: string | null;
+  code?: string | null;
+  project_code?: string | null;
+  projectCode?: string | null;
+  study_area_name?: string | null;
+  studyArea?: string | null;
+};
+
 type SampleRecord = {
   id: number | string;
+  projectId: string;
 
   // Supervisor requirement 4: Sample Management
   sampleCode: string;
@@ -158,7 +181,8 @@ type BackendSample = {
   sampleCode?: string | null;
   sample_name?: string | null;
   sampleName?: string | null;
-  project?: string | null;
+  project_id?: string | number | null;
+  project?: BackendProject | string | null;
   project_name?: string | null;
   studyArea?: string | null;
   study_area_name?: string | null;
@@ -226,6 +250,7 @@ const API_BASE_URL = (
 ).replace(/\/+$/, "");
 
 const emptyForm: SampleFormState = {
+  projectId: "",
   sampleCode: "",
   sampleName: "",
   collectionDate: "",
@@ -314,6 +339,95 @@ function toSafeNumber(value: unknown, fallback = 0): number {
   }
 
   return fallback;
+}
+
+function getProjectDisplayName(project: BackendProject | string | null | undefined): string {
+  if (!project) return "";
+
+  if (typeof project === "string") {
+    return project;
+  }
+
+  return toSafeString(
+    project.name ||
+      project.title ||
+      project.project_name ||
+      project.projectName ||
+      project.code ||
+      project.project_code ||
+      project.projectCode,
+  );
+}
+
+function normalizeProjectOption(raw: BackendProject): ProjectOption | null {
+  if (!raw || raw.id === null || raw.id === undefined) return null;
+
+  const name = getProjectDisplayName(raw);
+
+  if (!name) return null;
+
+  return {
+    id: raw.id,
+    name,
+    code: toSafeString(raw.code || raw.project_code || raw.projectCode),
+    studyArea: toSafeString(raw.study_area_name || raw.studyArea),
+  };
+}
+
+function normalizeProjectsResponse(payload: unknown): ProjectOption[] {
+  const data = unwrapApiData<BackendProject[] | BackendPaginator<BackendProject>>(payload);
+
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as BackendPaginator<BackendProject>).data)
+      ? ((data as BackendPaginator<BackendProject>).data || [])
+      : [];
+
+  return rows
+    .map(normalizeProjectOption)
+    .filter((project): project is ProjectOption => Boolean(project));
+}
+
+function createGoogleMapsUrl(latitude: string | number, longitude: string | number): string {
+  return `https://www.google.com/maps?q=${latitude},${longitude}`;
+}
+
+function extractCoordinatesFromText(value: string): { latitude: string; longitude: string } | null {
+  const text = value.trim();
+
+  if (!text) return null;
+
+  const patterns = [
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /ll=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+
+    if (!match) continue;
+
+    const latitude = Number(match[1]);
+    const longitude = Number(match[2]);
+
+    if (
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180
+    ) {
+      return {
+        latitude: latitude.toFixed(7),
+        longitude: longitude.toFixed(7),
+      };
+    }
+  }
+
+  return null;
 }
 
 function normalizeSampleStatus(value?: string | null): SampleStatus {
@@ -554,14 +668,17 @@ function normalizeSample(raw: BackendSample): SampleRecord {
   const interpretation =
     raw.interpretation || latestResult?.interpretation || raw.recommendation || latestResult?.recommendation || "";
 
+  const projectName = getProjectDisplayName(raw.project) || toSafeString(raw.project_name, "General Repository");
+
   return {
     id: raw.id || `${raw.sample_code || raw.sampleCode || Date.now()}`,
+    projectId: toSafeString(raw.project_id),
     sampleCode: toSafeString(raw.sampleCode || raw.sample_code, "-"),
     sampleName: toSafeString(raw.sampleName || raw.sample_name, "-"),
     collectionDate: toSafeString(raw.collectedDate || raw.collected_date),
     collector: toSafeString(raw.collectedBy || raw.collected_by, "-"),
     locationName: toSafeString(raw.collection_location || raw.district, "-"),
-    linkedProject: toSafeString(raw.project || raw.project_name, "General Repository"),
+    linkedProject: projectName,
     studyArea: toSafeString(raw.studyArea || raw.study_area_name, "Unassigned Study Area"),
     sampleType: toSafeString(raw.sampleType || raw.sample_type, "General sample"),
     material: toSafeString(raw.material, "-"),
@@ -673,9 +790,10 @@ function buildSampleFormData(form: SampleFormState): FormData {
     data.append(key, text);
   }
 
-  append("sample_code", form.sampleCode);
-  append("sample_name", form.sampleName || form.sampleCode);
+  // Sample code and lab reference are generated by Laravel backend.
+  append("project_id", form.projectId);
   append("project_name", form.linkedProject);
+  append("sample_name", form.sampleName);
   append("study_area_name", form.studyArea);
   append("sample_type", form.sampleType);
   append("material", form.material);
@@ -692,7 +810,6 @@ function buildSampleFormData(form: SampleFormState): FormData {
   append("notes", form.notes);
 
   append("laboratory", form.laboratory);
-  append("lab_reference", form.labReference);
   append("received_date", form.receivedDate);
   append("test_type", form.testType);
   append("test_method", form.testMethod);
@@ -716,27 +833,23 @@ function buildSampleFormData(form: SampleFormState): FormData {
 }
 
 function validateForm(form: SampleFormState): string | null {
-  if (!form.sampleCode.trim()) return "Sample code is required.";
   if (!form.collectionDate) return "Collection date is required.";
   if (!form.collector.trim()) return "Collector is required.";
-  if (!form.linkedProject.trim()) return "Linked project is required.";
+  if (!form.projectId.trim()) return "Please select a linked project.";
   if (!form.sampleType.trim()) return "Sample type is required.";
-  if (!form.locationName.trim() && !form.district.trim()) {
-    return "Location or district is required.";
+  if (!form.locationName.trim()) return "Google Map location is required.";
+  if (!form.latitude.trim() || !form.longitude.trim()) {
+    return "Latitude and longitude must be collected from Google Map location.";
   }
 
-  if (form.latitude.trim()) {
-    const latitude = Number(form.latitude);
-    if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
-      return "Latitude must be a number between -90 and 90.";
-    }
+  const latitude = Number(form.latitude);
+  if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
+    return "Latitude must be a valid number between -90 and 90.";
   }
 
-  if (form.longitude.trim()) {
-    const longitude = Number(form.longitude);
-    if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
-      return "Longitude must be a number between -180 and 180.";
-    }
+  const longitude = Number(form.longitude);
+  if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
+    return "Longitude must be a valid number between -180 and 180.";
   }
 
   return null;
@@ -773,6 +886,8 @@ export default function SampleLaboratoryPage() {
   const [error, setError] = useState<string>("");
   const [pageError, setPageError] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string>("");
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState<boolean>(false);
 
   async function loadSamples(): Promise<void> {
     try {
@@ -810,8 +925,23 @@ export default function SampleLaboratoryPage() {
     }
   }
 
+
+
+  async function loadProjects(): Promise<void> {
+    try {
+      setProjectsLoading(true);
+      const payload = await apiRequest<unknown>("/samples-laboratory/projects");
+      setProjects(normalizeProjectsResponse(payload));
+    } catch {
+      setProjects([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadSamples();
+    loadProjects();
   }, []);
 
   const filteredSamples = useMemo(() => {
@@ -869,6 +999,10 @@ export default function SampleLaboratoryPage() {
     setError("");
     setSuccessMessage("");
     setIsModalOpen(true);
+
+    if (projects.length === 0 && !projectsLoading) {
+      loadProjects();
+    }
   }
 
   function closeCreateModal(): void {
@@ -877,6 +1011,19 @@ export default function SampleLaboratoryPage() {
     setIsModalOpen(false);
     setForm(emptyForm);
     setError("");
+  }
+
+  function handleProjectSelect(projectId: string): void {
+    const selectedProject = projects.find(
+      (project) => String(project.id) === String(projectId),
+    );
+
+    setForm((current) => ({
+      ...current,
+      projectId,
+      linkedProject: selectedProject?.name || "",
+      studyArea: selectedProject?.studyArea || current.studyArea,
+    }));
   }
 
   async function handleCreateSample(
@@ -977,11 +1124,7 @@ export default function SampleLaboratoryPage() {
                   <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
                     Sample Management & Laboratory Results
                   </p>
-                  <p className="mt-1 text-sm leading-6 text-blue-800">
-                    Track sample code, collection date, collector, location,
-                    linked project, laboratory test results, and result
-                    documents in one workspace.
-                  </p>
+                  
                 </div>
 
                 {pageError && (
@@ -1226,7 +1369,10 @@ export default function SampleLaboratoryPage() {
           form={form}
           saving={saving}
           error={error}
+          projects={projects}
+          projectsLoading={projectsLoading}
           onChange={handleFormChange}
+          onProjectSelect={handleProjectSelect}
           onSubmit={handleCreateSample}
           onClose={closeCreateModal}
         />
@@ -1506,17 +1652,23 @@ function CreateSampleModal({
   form,
   saving,
   error,
+  projects,
+  projectsLoading,
   onChange,
+  onProjectSelect,
   onSubmit,
   onClose,
 }: {
   form: SampleFormState;
   saving: boolean;
   error: string;
+  projects: ProjectOption[];
+  projectsLoading: boolean;
   onChange: <K extends keyof SampleFormState>(
     field: K,
     value: SampleFormState[K],
   ) => void;
+  onProjectSelect: (projectId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
@@ -1532,8 +1684,8 @@ function CreateSampleModal({
               Register Sample & Laboratory Result
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Add sample code, collection date, collector, location, linked
-              project, test results and result documents.
+              Sample code and lab reference are generated by the system. Select
+              a project, collect Google Map location, and attach lab results.
             </p>
           </div>
 
@@ -1558,16 +1710,13 @@ function CreateSampleModal({
           <div className="space-y-6">
             <FormSection
               title="Sample Management"
-              description="Supervisor fields: sample code, collection date, collector, location and linked project."
+              description="System generates sample code. Select project from projects and collect Google Map location automatically."
               icon={<TestTube2 size={18} />}
             >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <InputField
+                <SystemGeneratedField
                   label="Sample Code"
-                  value={form.sampleCode}
-                  required
-                  placeholder="Example: SMP-NYG-001"
-                  onChange={(value) => onChange("sampleCode", value)}
+                  value="Generated automatically after saving"
                 />
                 <InputField
                   label="Sample Name / Information"
@@ -1589,12 +1738,12 @@ function CreateSampleModal({
                   placeholder="Example: Team Alpha or staff name"
                   onChange={(value) => onChange("collector", value)}
                 />
-                <InputField
-                  label="Linked Project"
-                  value={form.linkedProject}
+                <ProjectSelect
+                  value={form.projectId}
+                  projects={projects}
+                  loading={projectsLoading}
                   required
-                  placeholder="Example: Eastern Exploration Project"
-                  onChange={(value) => onChange("linkedProject", value)}
+                  onChange={onProjectSelect}
                 />
                 <InputField
                   label="Study Area"
@@ -1615,13 +1764,19 @@ function CreateSampleModal({
                   placeholder="Granite, clay, lateritic soil..."
                   onChange={(value) => onChange("material", value)}
                 />
-                <InputField
-                  label="Location / Site"
-                  value={form.locationName}
-                  required
-                  placeholder="Nearest landmark, sample point, or GPS site"
-                  onChange={(value) => onChange("locationName", value)}
-                />
+                <div className="md:col-span-2">
+                  <MapLocationField
+                    value={form.locationName}
+                    latitude={form.latitude}
+                    longitude={form.longitude}
+                    required
+                    onLocationChange={(value) => onChange("locationName", value)}
+                    onCoordinatesChange={(latitude, longitude) => {
+                      onChange("latitude", latitude);
+                      onChange("longitude", longitude);
+                    }}
+                  />
+                </div>
                 <InputField
                   label="District"
                   value={form.district}
@@ -1639,18 +1794,6 @@ function CreateSampleModal({
                   value={form.depth}
                   placeholder="Example: 0.8 m"
                   onChange={(value) => onChange("depth", value)}
-                />
-                <InputField
-                  label="Latitude"
-                  value={form.latitude}
-                  placeholder="Example: -1.308800"
-                  onChange={(value) => onChange("latitude", value)}
-                />
-                <InputField
-                  label="Longitude"
-                  value={form.longitude}
-                  placeholder="Example: 30.334400"
-                  onChange={(value) => onChange("longitude", value)}
                 />
                 <div className="md:col-span-2">
                   <InputField
@@ -1675,11 +1818,9 @@ function CreateSampleModal({
                   placeholder="Example: MIGECO Central Laboratory"
                   onChange={(value) => onChange("laboratory", value)}
                 />
-                <InputField
+                <SystemGeneratedField
                   label="Lab Reference"
-                  value={form.labReference}
-                  placeholder="Example: LAB-2026-014"
-                  onChange={(value) => onChange("labReference", value)}
+                  value="Generated automatically when lab result is saved"
                 />
                 <InputField
                   label="Received Date"
@@ -1988,6 +2129,199 @@ function ResultDocumentsUpload({
           No result documents selected yet.
         </div>
       )}
+    </div>
+  );
+}
+
+function SystemGeneratedField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">
+        {label}
+      </label>
+      <div className="flex min-h-[46px] items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-500">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ProjectSelect({
+  value,
+  projects,
+  loading,
+  required = false,
+  onChange,
+}: {
+  value: string;
+  projects: ProjectOption[];
+  loading: boolean;
+  required?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">
+        Linked Project {required && <span className="text-red-600">*</span>}
+      </label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:bg-white"
+      >
+        <option value="">
+          {loading ? "Loading projects..." : "Select linked project"}
+        </option>
+        {projects.map((project) => (
+          <option key={String(project.id)} value={String(project.id)}>
+            {project.code ? `${project.code} - ${project.name}` : project.name}
+          </option>
+        ))}
+      </select>
+      {projects.length === 0 && !loading && (
+        <p className="mt-1 text-[11px] text-amber-600">
+          No projects loaded. Confirm /api/samples-laboratory/projects is available.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MapLocationField({
+  value,
+  latitude,
+  longitude,
+  required = false,
+  onLocationChange,
+  onCoordinatesChange,
+}: {
+  value: string;
+  latitude: string;
+  longitude: string;
+  required?: boolean;
+  onLocationChange: (value: string) => void;
+  onCoordinatesChange: (latitude: string, longitude: string) => void;
+}) {
+  const [locating, setLocating] = useState(false);
+  const [geoError, setGeoError] = useState("");
+
+  function handleLocationTextChange(text: string): void {
+    onLocationChange(text);
+
+    const coordinates = extractCoordinatesFromText(text);
+
+    if (coordinates) {
+      onCoordinatesChange(coordinates.latitude, coordinates.longitude);
+    }
+  }
+
+  function useCurrentLocation(): void {
+    setGeoError("");
+
+    if (!navigator.geolocation) {
+      setGeoError("Your browser does not support location access.");
+      return;
+    }
+
+    setLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitudeValue = position.coords.latitude.toFixed(7);
+        const longitudeValue = position.coords.longitude.toFixed(7);
+        const mapsUrl = createGoogleMapsUrl(latitudeValue, longitudeValue);
+
+        onCoordinatesChange(latitudeValue, longitudeValue);
+        onLocationChange(mapsUrl);
+        setLocating(false);
+      },
+      () => {
+        setGeoError("Location permission was denied or unavailable. Paste a Google Maps link with coordinates instead.");
+        setLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      },
+    );
+  }
+
+  const hasCoordinates = latitude.trim() !== "" && longitude.trim() !== "";
+  const mapsUrl = hasCoordinates ? createGoogleMapsUrl(latitude, longitude) : "";
+
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">
+        Google Map Location {required && <span className="text-red-600">*</span>}
+      </label>
+
+      <div className="flex flex-col gap-2 lg:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <MapPin
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            value={value}
+            onChange={(event) => handleLocationTextChange(event.target.value)}
+            placeholder="Click Use Current Location or paste Google Maps link"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-4 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={useCurrentLocation}
+          disabled={locating}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {locating ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Navigation size={15} />
+          )}
+          {locating ? "Getting location..." : "Use Current Location"}
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+        <ReadOnlyCoordinate label="Latitude" value={latitude || "Auto"} />
+        <ReadOnlyCoordinate label="Longitude" value={longitude || "Auto"} />
+        <a
+          href={mapsUrl || "#"}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            "flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold",
+            mapsUrl
+              ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              : "pointer-events-none border-slate-200 bg-slate-50 text-slate-400",
+          )}
+        >
+          Open in Google Maps
+        </a>
+      </div>
+
+      {geoError && (
+        <p className="mt-2 text-xs text-red-600">{geoError}</p>
+      )}
+      <p className="mt-2 text-[11px] leading-5 text-slate-400">
+        Latitude and longitude are read-only. They are collected from browser GPS or parsed from a Google Maps link.
+      </p>
+    </div>
+  );
+}
+
+function ReadOnlyCoordinate({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-xs font-semibold text-slate-700">
+        {value}
+      </p>
     </div>
   );
 }

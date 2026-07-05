@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ElementType, ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
+import type { ElementType } from "react";
+import { NavLink } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   BarChart3,
   Bell,
   BrainCircuit,
@@ -13,17 +11,18 @@ import {
   Database,
   Download,
   FileText,
+  FilterX,
+  FlaskConical,
   FolderOpen,
-  GitBranch,
   Loader2,
   LockKeyhole,
-  Radar,
+  MapPin,
   RefreshCcw,
   ScanSearch,
+  Search,
   ShieldAlert,
   ShieldCheck,
   UploadCloud,
-  UsersRound,
 } from "lucide-react";
 import {
   Area,
@@ -37,12 +36,7 @@ import {
 
 import AdminSidebar from "../AdminSidebar";
 
-import {
-  apiRequest,
-  getCurrentUser,
-  getDocuments,
-  getProjects,
-} from "../../../services/dmsApi";
+import { apiRequest } from "../../../services/dmsApi";
 
 import type {
   DmsDocument,
@@ -57,49 +51,47 @@ type AlertState = {
 
 type DateRange = "7" | "30" | "90" | "365";
 
-type AiSummary = {
-  total_documents?: number;
-  ready_for_ai?: number;
-  analyzed_documents?: number;
-  not_analyzed_documents?: number;
-  pending_ai_documents?: number;
-  failed_ai_documents?: number;
+type ReportFilters = {
+  province: string;
+  district: string;
+  sector: string;
+  project_id: string;
+  document_type: string;
+  record_type: string;
+  status: string;
+  search: string;
+  clean_only: boolean;
 };
 
-type EncryptionSummary = {
-  total_documents?: number;
-  clean_active_documents?: number;
-  encrypted_documents?: number;
-  not_encrypted_documents?: number;
-  failed_encryption_documents?: number;
-};
-
-type SandboxSummary = {
-  total_documents?: number;
-  clean_active_documents?: number;
-  not_tested_documents?: number;
-  pending_documents?: number;
-  safe_documents?: number;
-  unsafe_documents?: number;
-  failed_documents?: number;
-};
-
-type PlaintextSummary = {
+type ReportSummary = {
   total_documents?: number;
   clean_documents?: number;
-  extracted_documents?: number;
-  not_extracted_documents?: number;
-  failed_documents?: number;
+  clean_export_ready_documents?: number;
+  quarantined_documents?: number;
+  archived_documents?: number;
+  unsafe_documents?: number;
+  failed_scan_documents?: number;
+  blocked_documents?: number;
+  total_projects?: number;
+  active_projects?: number;
+  study_areas?: number;
+  samples?: number;
+  geological_records?: number;
+  soil_records?: number;
+  soil_geological_records?: number;
+  soil_sample_records?: number;
+  recent_geo_records?: number;
+  uploads_in_range?: number;
+  updates_in_range?: number;
+  storage_used_bytes?: number;
 };
 
-type DashboardData = {
-  user: UserSummary | null;
-  documents: DmsDocument[];
-  projects: ProjectSummary[];
-  aiSummary: AiSummary | null;
-  encryptionSummary: EncryptionSummary | null;
-  sandboxSummary: SandboxSummary | null;
-  plaintextSummary: PlaintextSummary | null;
+type ReportNotification = {
+  id: string;
+  level: "success" | "warning" | "danger" | "info";
+  title: string;
+  message: string;
+  count?: number;
 };
 
 type ActivityChartRow = {
@@ -114,12 +106,94 @@ type DocumentTypeRow = {
   percentage: number;
 };
 
-type ReportShortcut = {
-  title: string;
-  description: string;
-  path: string;
-  icon: ElementType;
-  value: string;
+type GeologicalRecord = {
+  id: number;
+  record_type?: string | null;
+  site_name?: string | null;
+  survey_name?: string | null;
+  geologist_name?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  rock_type?: string | null;
+  mineral_name?: string | null;
+  borehole_code?: string | null;
+  created_at?: string | null;
+  document?: {
+    id?: number;
+    document_code?: string | null;
+    title?: string | null;
+    status?: string | null;
+    scan_status?: string | null;
+    sandbox_status?: string | null;
+    project?: {
+      id?: number;
+      name?: string | null;
+      code?: string | null;
+    } | null;
+  } | null;
+};
+
+type StudyArea = {
+  id: number;
+  name?: string | null;
+  code?: string | null;
+  project_name?: string | null;
+  province?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  status?: string | null;
+};
+
+type SampleRecord = {
+  id: number;
+  sample_code?: string | null;
+  sample_name?: string | null;
+  sample_type?: string | null;
+  material?: string | null;
+  project_name?: string | null;
+  district?: string | null;
+  sector?: string | null;
+  status?: string | null;
+};
+
+type AdvancedReportData = {
+  user: UserSummary | null;
+  filters?: Record<string, unknown>;
+  summary: ReportSummary;
+  projects: ProjectSummary[];
+  documents: DmsDocument[];
+  geological_records: GeologicalRecord[];
+  study_areas: StudyArea[];
+  samples: SampleRecord[];
+  notifications: ReportNotification[];
+  activity_chart: ActivityChartRow[];
+  document_types: DocumentTypeRow[];
+};
+
+const emptyFilters: ReportFilters = {
+  province: "",
+  district: "",
+  sector: "",
+  project_id: "",
+  document_type: "",
+  record_type: "",
+  status: "",
+  search: "",
+  clean_only: true,
+};
+
+const emptyReportData: AdvancedReportData = {
+  user: null,
+  summary: {},
+  projects: [],
+  documents: [],
+  geological_records: [],
+  study_areas: [],
+  samples: [],
+  notifications: [],
+  activity_chart: [],
+  document_types: [],
 };
 
 const reportTabs = [
@@ -141,18 +215,8 @@ const reportTabs = [
   {
     label: "Projects",
     path: "/reports/depreport",
-    icon: UsersRound,
+    icon: FolderOpen,
   },
-  // {
-  //   label: "Versioning",
-  //   path: "/reports/versioningrep",
-  //   icon: GitBranch,
-  // },
-  // {
-  //   label: "Access & Permissions",
-  //   path: "/reports/accessreport",
-  //   icon: ShieldCheck,
-  // },
 ];
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -171,8 +235,8 @@ function getReadableStatus(value?: string | null): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat().format(value);
+function formatNumber(value?: number | null): string {
+  return new Intl.NumberFormat().format(Number(value || 0));
 }
 
 function formatBytes(bytes?: number | null): string {
@@ -221,118 +285,10 @@ function getRoleName(user: UserSummary | null): string {
       slug?: string;
     };
 
-    return (
-      roleObject.name ||
-      getReadableStatus(roleObject.slug) ||
-      "Reports User"
-    );
+    return roleObject.name || getReadableStatus(roleObject.slug);
   }
 
   return "Reports User";
-}
-
-function getDocumentType(document: DmsDocument): string {
-  if (document.document_type) {
-    return getReadableStatus(document.document_type);
-  }
-
-  if (document.extension) {
-    return document.extension.toUpperCase();
-  }
-
-  return "Other";
-}
-
-function getStartDate(days: number): Date {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - (days - 1));
-
-  return date;
-}
-
-function getDateDaysAgo(days: number): Date {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-
-  return date;
-}
-
-function isWithinRange(date?: string | null, days = 30): boolean {
-  if (!date) return false;
-
-  const parsed = new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) return false;
-
-  return parsed >= getStartDate(days);
-}
-
-function countInWindow(
-  documents: DmsDocument[],
-  field: "created_at" | "updated_at",
-  days: number
-): number {
-  return documents.filter((document) =>
-    isWithinRange(document[field], days)
-  ).length;
-}
-
-function countPreviousWindow(
-  documents: DmsDocument[],
-  field: "created_at" | "updated_at",
-  days: number
-): number {
-  const currentStart = getStartDate(days);
-  const previousStart = getDateDaysAgo(days * 2 - 1);
-
-  return documents.filter((document) => {
-    const value = document[field];
-
-    if (!value) return false;
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) return false;
-
-    return date >= previousStart && date < currentStart;
-  }).length;
-}
-
-function getTrend(current: number, previous: number): number {
-  if (previous <= 0 && current > 0) return 100;
-  if (previous <= 0) return 0;
-
-  return Math.round(((current - previous) / previous) * 1000) / 10;
-}
-
-function isClean(document: DmsDocument): boolean {
-  return ["clean", "passed"].includes(toLower(document.scan_status));
-}
-
-function isSandboxSafe(document: DmsDocument): boolean {
-  return toLower(document.sandbox_status) === "safe";
-}
-
-function isEncrypted(document: DmsDocument): boolean {
-  return toLower(document.encryption_status) === "encrypted";
-}
-
-function isPlaintextReady(document: DmsDocument): boolean {
-  return toLower(document.plaintext_status) === "extracted";
-}
-
-function isAiAnalyzed(document: DmsDocument): boolean {
-  return toLower(document.ai_status) === "analyzed";
-}
-
-function isBlocked(document: DmsDocument): boolean {
-  return (
-    ["infected", "rejected", "blocked"].includes(toLower(document.status)) ||
-    ["infected", "failed"].includes(toLower(document.scan_status)) ||
-    ["unsafe", "failed"].includes(toLower(document.sandbox_status))
-  );
 }
 
 function getLocalDateKey(date: Date): string {
@@ -341,85 +297,6 @@ function getLocalDateKey(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
-}
-
-function buildActivityChartData(
-  documents: DmsDocument[],
-  rangeDays: number
-): ActivityChartRow[] {
-  const interval =
-    rangeDays <= 7 ? 1 : rangeDays <= 30 ? 5 : rangeDays <= 90 ? 15 : 60;
-
-  const rows: ActivityChartRow[] = [];
-
-  for (let offset = rangeDays - 1; offset >= 0; offset -= interval) {
-    const start = getDateDaysAgo(offset);
-    const end = new Date(start);
-    end.setDate(start.getDate() + interval - 1);
-    end.setHours(23, 59, 59, 999);
-
-    const uploads = documents.filter((document) => {
-      if (!document.created_at) return false;
-
-      const createdAt = new Date(document.created_at);
-
-      return createdAt >= start && createdAt <= end;
-    }).length;
-
-    const updates = documents.filter((document) => {
-      if (!document.updated_at) return false;
-
-      const updatedAt = new Date(document.updated_at);
-
-      return updatedAt >= start && updatedAt <= end;
-    }).length;
-
-    rows.push({
-      name: start.toLocaleDateString(undefined, {
-        month: "short",
-        day: "2-digit",
-      }),
-      uploads,
-      updates,
-    });
-  }
-
-  return rows.length > 0
-    ? rows
-    : [{ name: "Today", uploads: 0, updates: 0 }];
-}
-
-function buildDocumentTypeRows(
-  documents: DmsDocument[]
-): DocumentTypeRow[] {
-  const counts = new Map<string, number>();
-
-  documents.forEach((document) => {
-    const type = getDocumentType(document);
-    counts.set(type, (counts.get(type) || 0) + 1);
-  });
-
-  const total = documents.length || 1;
-
-  return Array.from(counts.entries())
-    .sort((first, second) => second[1] - first[1])
-    .slice(0, 5)
-    .map(([name, count]) => ({
-      name,
-      count,
-      percentage: Math.round((count / total) * 100),
-    }));
-}
-
-async function safeRequest<T>(
-  request: () => Promise<T>,
-  fallback: T
-): Promise<T> {
-  try {
-    return await request();
-  } catch {
-    return fallback;
-  }
 }
 
 function unwrapData<T>(response: unknown, fallback: T): T {
@@ -433,6 +310,65 @@ function unwrapData<T>(response: unknown, fallback: T): T {
   }
 
   return (response as T) ?? fallback;
+}
+
+function buildQueryParams(rangeDays: DateRange, filters: ReportFilters): string {
+  const params = new URLSearchParams();
+
+  params.set("date_range", rangeDays);
+
+  Object.entries(filters).forEach(([key, value]) => {
+    if (typeof value === "boolean") {
+      if (value) params.set(key, "1");
+      return;
+    }
+
+    if (String(value || "").trim()) {
+      params.set(key, String(value).trim());
+    }
+  });
+
+  return params.toString();
+}
+
+function getProjectLabel(project: ProjectSummary): string {
+  const projectObject = project as ProjectSummary & {
+    code?: string | null;
+    title?: string | null;
+    project_name?: string | null;
+  };
+
+  const name =
+    projectObject.name ||
+    projectObject.title ||
+    projectObject.project_name ||
+    `Project ${projectObject.id}`;
+
+  return projectObject.code ? `${name} (${projectObject.code})` : name;
+}
+
+function normalizeReportData(payload: AdvancedReportData): AdvancedReportData {
+  return {
+    ...emptyReportData,
+    ...payload,
+    summary: payload.summary || {},
+    projects: Array.isArray(payload.projects) ? payload.projects : [],
+    documents: Array.isArray(payload.documents) ? payload.documents : [],
+    geological_records: Array.isArray(payload.geological_records)
+      ? payload.geological_records
+      : [],
+    study_areas: Array.isArray(payload.study_areas) ? payload.study_areas : [],
+    samples: Array.isArray(payload.samples) ? payload.samples : [],
+    notifications: Array.isArray(payload.notifications)
+      ? payload.notifications
+      : [],
+    activity_chart: Array.isArray(payload.activity_chart)
+      ? payload.activity_chart
+      : [],
+    document_types: Array.isArray(payload.document_types)
+      ? payload.document_types
+      : [],
+  };
 }
 
 function Header({
@@ -503,10 +439,7 @@ function Header({
             </p>
           </div>
 
-          <ChevronDown
-            size={14}
-            className="hidden text-slate-400 lg:block"
-          />
+          <ChevronDown size={14} className="hidden text-slate-400 lg:block" />
         </button>
       </div>
     </header>
@@ -527,8 +460,7 @@ function ReportTabs() {
               end={tab.path === "/reports"}
               className={({ isActive }) =>
                 cn(
-                  "inline-flex h-10 items-center gap-2 rounded-xl px-3.5",
-                  "text-sm font-semibold transition",
+                  "inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition",
                   isActive
                     ? "bg-blue-600 text-white shadow-sm shadow-blue-200"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -550,13 +482,11 @@ function MetricCard({
   value,
   description,
   icon: Icon,
-  trend,
 }: {
   title: string;
   value: string;
   description: string;
   icon: ElementType;
-  trend?: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
@@ -568,29 +498,7 @@ function MetricCard({
             {value}
           </p>
 
-          <div className="mt-2 flex items-center gap-2">
-            {trend !== undefined && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-0.5 text-[11px] font-bold",
-                  trend >= 0 ? "text-emerald-600" : "text-red-600"
-                )}
-              >
-                {trend >= 0 ? (
-                  <ArrowUpRight size={13} />
-                ) : (
-                  <ArrowDownRight size={13} />
-                )}
-
-                {trend >= 0 ? "+" : ""}
-                {trend}%
-              </span>
-            )}
-
-            <span className="text-[11px] text-slate-400">
-              {description}
-            </span>
-          </div>
+          <p className="mt-2 text-[11px] text-slate-400">{description}</p>
         </div>
 
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -601,87 +509,65 @@ function MetricCard({
   );
 }
 
-function WorkflowMetric({
-  title,
-  value,
-  total,
-  icon,
+function FilterInput({
+  label,
+  children,
 }: {
-  title: string;
-  value: number;
-  total: number;
-  icon: ReactNode;
+  label: string;
+  children: React.ReactNode;
 }) {
-  const percentage =
-    total > 0 ? Math.round((value / total) * 100) : 0;
-
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3.5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-blue-600">{icon}</span>
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
 
-          <span className="truncate text-xs font-semibold text-slate-600">
-            {title}
-          </span>
-        </div>
-
-        <span className="text-xs font-bold text-slate-900">
-          {value}
-        </span>
-      </div>
-
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-blue-600"
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-
-      <p className="mt-2 text-[10px] text-slate-400">
-        {percentage}% of documents
-      </p>
-    </div>
+      {children}
+    </label>
   );
 }
 
-function ReportShortcutCard({
-  shortcut,
+function inputClass(): string {
+  return "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none transition placeholder:text-slate-300 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50";
+}
+
+function NotificationCard({
+  notification,
 }: {
-  shortcut: ReportShortcut;
+  notification: ReportNotification;
 }) {
-  const Icon = shortcut.icon;
+  const styles = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-700",
+    danger: "border-red-200 bg-red-50 text-red-700",
+    info: "border-blue-200 bg-blue-50 text-blue-700",
+  };
 
   return (
-    <Link
-      to={shortcut.path}
-      className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3.5 transition hover:border-blue-200 hover:bg-blue-50/50"
+    <div
+      className={cn(
+        "rounded-2xl border p-4",
+        styles[notification.level] || styles.info
+      )}
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-blue-600 group-hover:text-white">
-        <Icon size={18} />
+      <div className="flex items-start gap-3">
+        <Bell size={18} className="mt-0.5 shrink-0" />
+
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold">{notification.title}</p>
+
+          <p className="mt-1 text-xs leading-5 opacity-90">
+            {notification.message}
+          </p>
+        </div>
+
+        {typeof notification.count === "number" && notification.count > 0 && (
+          <span className="rounded-full bg-white/70 px-2 py-1 text-xs font-bold">
+            {notification.count}
+          </span>
+        )}
       </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-slate-800">
-          {shortcut.title}
-        </p>
-
-        <p className="mt-0.5 truncate text-[11px] text-slate-400">
-          {shortcut.description}
-        </p>
-      </div>
-
-      <div className="text-right">
-        <p className="text-sm font-bold text-slate-900">
-          {shortcut.value}
-        </p>
-
-        <ChevronRight
-          size={14}
-          className="ml-auto mt-1 text-slate-300 transition group-hover:text-blue-600"
-        />
-      </div>
-    </Link>
+    </div>
   );
 }
 
@@ -694,7 +580,6 @@ function ChartTooltip({
   payload?: Array<{
     name?: string;
     value?: number;
-    color?: string;
   }>;
   label?: string;
 }) {
@@ -716,9 +601,7 @@ function ChartTooltip({
               {item.name === "updates" ? "Updates" : "Uploads"}
             </span>
 
-            <span className="font-bold text-slate-900">
-              {item.value ?? 0}
-            </span>
+            <span className="font-bold text-slate-900">{item.value ?? 0}</span>
           </div>
         ))}
       </div>
@@ -727,90 +610,35 @@ function ChartTooltip({
 }
 
 export default function ReportsOverview() {
-  const [data, setData] = useState<DashboardData>({
-    user: null,
-    documents: [],
-    projects: [],
-    aiSummary: null,
-    encryptionSummary: null,
-    sandboxSummary: null,
-    plaintextSummary: null,
-  });
-
+  const [data, setData] = useState<AdvancedReportData>(emptyReportData);
   const [rangeDays, setRangeDays] = useState<DateRange>("30");
+  const [filters, setFilters] = useState<ReportFilters>(emptyFilters);
   const [loading, setLoading] = useState<boolean>(true);
   const [alert, setAlert] = useState<AlertState | null>(null);
 
-  const selectedRangeDays = Number(rangeDays);
+  const queryParams = useMemo(
+    () => buildQueryParams(rangeDays, filters),
+    [rangeDays, filters]
+  );
 
-  async function loadDashboard(): Promise<void> {
+  async function loadReport(): Promise<void> {
     try {
       setLoading(true);
       setAlert(null);
 
-      const [
-        user,
-        documents,
-        projects,
-        aiSummary,
-        encryptionSummary,
-        sandboxSummary,
-        plaintextSummary,
-      ] = await Promise.all([
-        safeRequest(() => getCurrentUser(), null),
-        safeRequest(() => getDocuments({}), []),
-        safeRequest(() => getProjects({}), []),
-        safeRequest(
-          async () =>
-            unwrapData<AiSummary>(
-              await apiRequest("/document-ai/summary", {
-                method: "GET",
-              }),
-              {}
-            ),
-          null
-        ),
-        safeRequest(
-          async () =>
-            unwrapData<EncryptionSummary>(
-              await apiRequest("/document-encryption/summary", {
-                method: "GET",
-              }),
-              {}
-            ),
-          null
-        ),
-        safeRequest(
-          async () =>
-            unwrapData<SandboxSummary>(
-              await apiRequest("/document-sandbox/summary", {
-                method: "GET",
-              }),
-              {}
-            ),
-          null
-        ),
-        safeRequest(
-          async () =>
-            unwrapData<PlaintextSummary>(
-              await apiRequest("/document-plaintext/summary", {
-                method: "GET",
-              }),
-              {}
-            ),
-          null
-        ),
-      ]);
+      const response = await apiRequest(
+        `/reports/advanced-overview?${queryParams}`,
+        {
+          method: "GET",
+        }
+      );
 
-      setData({
-        user,
-        documents: Array.isArray(documents) ? documents : [],
-        projects: Array.isArray(projects) ? projects : [],
-        aiSummary,
-        encryptionSummary,
-        sandboxSummary,
-        plaintextSummary,
-      });
+      const payload = unwrapData<AdvancedReportData>(
+        response,
+        emptyReportData
+      );
+
+      setData(normalizeReportData(payload));
     } catch (error) {
       setAlert({
         type: "error",
@@ -825,182 +653,117 @@ export default function ReportsOverview() {
   }
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryParams]);
 
-  const uploadedCurrent = countInWindow(
-    data.documents,
-    "created_at",
-    selectedRangeDays
-  );
-
-  const uploadedPrevious = countPreviousWindow(
-    data.documents,
-    "created_at",
-    selectedRangeDays
-  );
-
-  const updatedCurrent = countInWindow(
-    data.documents,
-    "updated_at",
-    selectedRangeDays
-  );
-
-  const updatedPrevious = countPreviousWindow(
-    data.documents,
-    "updated_at",
-    selectedRangeDays
-  );
-
-  const uploadTrend = getTrend(uploadedCurrent, uploadedPrevious);
-  const updateTrend = getTrend(updatedCurrent, updatedPrevious);
-
-  const activeProjects = data.projects.filter(
-    (project) => toLower(project.status) === "active"
-  ).length;
-
-  const totalStorageBytes = data.documents.reduce(
-    (total, document) => total + Number(document.file_size || 0),
-    0
-  );
-
-  const cleanDocuments = data.documents.filter(isClean).length;
-
-  const sandboxSafeDocuments =
-    data.sandboxSummary?.safe_documents ??
-    data.documents.filter(isSandboxSafe).length;
-
-  const encryptedDocuments =
-    data.encryptionSummary?.encrypted_documents ??
-    data.documents.filter(isEncrypted).length;
-
-  const plaintextReadyDocuments =
-    data.plaintextSummary?.extracted_documents ??
-    data.documents.filter(isPlaintextReady).length;
-
-  const aiAnalyzedDocuments =
-    data.aiSummary?.analyzed_documents ??
-    data.documents.filter(isAiAnalyzed).length;
-
-  const blockedDocuments = data.documents.filter(isBlocked).length;
-
-  const activityData = useMemo(
-    () => buildActivityChartData(data.documents, selectedRangeDays),
-    [data.documents, selectedRangeDays]
-  );
-
-  const documentTypeRows = useMemo(
-    () => buildDocumentTypeRows(data.documents),
-    [data.documents]
-  );
-
-  const reportShortcuts = useMemo<ReportShortcut[]>(
-    () => [
-      {
-        title: "Document Usage",
-        description: "Document totals and usage",
-        path: "/reports/docreport",
-        icon: FileText,
-        value: formatNumber(data.documents.length),
-      },
-      {
-        title: "Upload Activity",
-        description: `Uploads in ${selectedRangeDays} days`,
-        path: "/reports/uploadrep",
-        icon: UploadCloud,
-        value: formatNumber(uploadedCurrent),
-      },
-      {
-        title: "Project Report",
-        description: "Active project workspaces",
-        path: "/reports/depreport",
-        icon: FolderOpen,
-        value: formatNumber(activeProjects),
-      },
-      {
-        title: "Access & Security",
-        description: "Blocked or unsafe records",
-        path: "/reports/accessreport",
-        icon: ShieldAlert,
-        value: formatNumber(blockedDocuments),
-      },
-    ],
-    [
-      activeProjects,
-      blockedDocuments,
-      data.documents.length,
-      selectedRangeDays,
-      uploadedCurrent,
-    ]
-  );
-
-  function exportSummary(): void {
-    const summary = {
-      generated_at: new Date().toISOString(),
-      selected_range_days: selectedRangeDays,
-      total_documents: data.documents.length,
-      uploads_in_range: uploadedCurrent,
-      updates_in_range: updatedCurrent,
-      total_projects: data.projects.length,
-      active_projects: activeProjects,
-      storage_used_bytes: totalStorageBytes,
-      storage_used_readable: formatBytes(totalStorageBytes),
-      clean_documents: cleanDocuments,
-      sandbox_safe_documents: sandboxSafeDocuments,
-      encrypted_documents: encryptedDocuments,
-      plaintext_ready_documents: plaintextReadyDocuments,
-      ai_analyzed_documents: aiAnalyzedDocuments,
-      blocked_documents: blockedDocuments,
-      document_types: documentTypeRows,
-    };
-
-    const blob = new Blob([JSON.stringify(summary, null, 2)], {
-      type: "application/json",
-    });
-
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `dms-report-summary-${getLocalDateKey(new Date())}.json`;
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    window.URL.revokeObjectURL(url);
+  function clearFilters(): void {
+    setFilters(emptyFilters);
+    setRangeDays("30");
   }
+
+  async function exportCleanReport(): Promise<void> {
+    try {
+      setAlert(null);
+
+      const exportFilters = {
+        ...filters,
+        clean_only: true,
+      };
+
+      const exportQuery = buildQueryParams(rangeDays, exportFilters);
+
+      const response = await apiRequest(
+        `/reports/export-preview?${exportQuery}`,
+        {
+          method: "GET",
+        }
+      );
+
+      const payload = unwrapData<AdvancedReportData>(
+        response,
+        emptyReportData
+      );
+
+      const normalized = normalizeReportData(payload);
+
+      const exportPayload = {
+        generated_at: new Date().toISOString(),
+        note: "Export generated using clean filter before export.",
+        filters: normalized.filters,
+        summary: normalized.summary,
+        documents: normalized.documents,
+        geological_records: normalized.geological_records,
+        study_areas: normalized.study_areas,
+        samples: normalized.samples,
+      };
+
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+        type: "application/json",
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `migeco-clean-report-${getLocalDateKey(
+        new Date()
+      )}.json`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+
+      setAlert({
+        type: "success",
+        message: "Clean filtered report exported successfully.",
+      });
+    } catch (error) {
+      setAlert({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to export clean report.",
+      });
+    }
+  }
+
+  const summary = data.summary;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f7fb] font-sans text-slate-800">
       <AdminSidebar />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header
-          user={data.user}
-          loading={loading}
-          onRefresh={loadDashboard}
-        />
+        <Header user={data.user} loading={loading} onRefresh={loadReport} />
 
         <div className="custom-scrollbar flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1500px] space-y-5 px-5 py-6 lg:px-8">
             <ReportTabs />
 
             {alert && (
-              <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div
+                className={cn(
+                  "flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
+                  alert.type === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : alert.type === "info"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                )}
+              >
                 <div className="flex items-start gap-2">
-                  <AlertTriangle
-                    size={18}
-                    className="mt-0.5 shrink-0"
-                  />
-
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0" />
                   <span>{alert.message}</span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setAlert(null)}
-                  className="text-lg leading-none text-red-500"
+                  className="text-lg leading-none opacity-70"
                   aria-label="Close alert"
                 >
                   ×
@@ -1008,41 +771,234 @@ export default function ReportsOverview() {
               </div>
             )}
 
-            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  Reporting Overview
-                </h2>
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Advanced Report Builder
+                  </h2>
 
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Real-time insights from your documents, projects and security
-                  workflow.
-                </p>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
+                    Filter reports by region, project, soil records, geo
+                    documents, clean security status, and field survey records
+                    before export.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={rangeDays}
+                    onChange={(event) =>
+                      setRangeDays(event.target.value as DateRange)
+                    }
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                  >
+                    <option value="7">Last 7 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="365">Last 12 months</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    <FilterX size={16} />
+                    Clear filters
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportCleanReport}
+                    disabled={loading}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Download size={16} />
+                    Export clean report
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={rangeDays}
-                  onChange={(event) =>
-                    setRangeDays(event.target.value as DateRange)
-                  }
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
-                >
-                  <option value="7">Last 7 days</option>
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="365">Last 12 months</option>
-                </select>
+              <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <FilterInput label="Province / City">
+                  <input
+                    value={filters.province}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        province: event.target.value,
+                      })
+                    }
+                    placeholder="Example: Kigali City"
+                    className={inputClass()}
+                  />
+                </FilterInput>
 
-                <button
-                  type="button"
-                  onClick={exportSummary}
-                  disabled={loading}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Download size={16} />
-                  Export data
-                </button>
+                <FilterInput label="District">
+                  <input
+                    value={filters.district}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        district: event.target.value,
+                      })
+                    }
+                    placeholder="Example: Gasabo"
+                    className={inputClass()}
+                  />
+                </FilterInput>
+
+                <FilterInput label="Sector">
+                  <input
+                    value={filters.sector}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        sector: event.target.value,
+                      })
+                    }
+                    placeholder="Example: Kimironko"
+                    className={inputClass()}
+                  />
+                </FilterInput>
+
+                <FilterInput label="Project">
+                  <select
+                    value={filters.project_id}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        project_id: event.target.value,
+                      })
+                    }
+                    className={inputClass()}
+                  >
+                    <option value="">All projects</option>
+                    {data.projects.map((project) => (
+                      <option key={project.id} value={String(project.id)}>
+                        {getProjectLabel(project)}
+                      </option>
+                    ))}
+                  </select>
+                </FilterInput>
+
+                <FilterInput label="Document Type">
+                  <select
+                    value={filters.document_type}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        document_type: event.target.value,
+                      })
+                    }
+                    className={inputClass()}
+                  >
+                    <option value="">All types</option>
+                    <option value="geological_report">
+                      Geological Report
+                    </option>
+                    <option value="technical_drawing">
+                      Technical Drawing
+                    </option>
+                    <option value="survey_map">Survey Map</option>
+                    <option value="construction_record">
+                      Construction Record
+                    </option>
+                    <option value="spreadsheet">Spreadsheet</option>
+                    <option value="image">Image</option>
+                    <option value="other">Other</option>
+                  </select>
+                </FilterInput>
+
+                <FilterInput label="Geo Record Type">
+                  <select
+                    value={filters.record_type}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        record_type: event.target.value,
+                      })
+                    }
+                    className={inputClass()}
+                  >
+                    <option value="">All geo records</option>
+                    <option value="geological_report">
+                      Geological Report
+                    </option>
+                    <option value="geological_map">Geological Map</option>
+                    <option value="borehole">Borehole</option>
+                    <option value="rock_sample">Rock Sample</option>
+                    <option value="soil_profile">Soil Profile</option>
+                    <option value="laboratory_result">
+                      Laboratory Result
+                    </option>
+                    <option value="field_note">Field Note</option>
+                    <option value="groundwater">Groundwater</option>
+                  </select>
+                </FilterInput>
+
+                <FilterInput label="Document Status">
+                  <select
+                    value={filters.status}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        status: event.target.value,
+                      })
+                    }
+                    className={inputClass()}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="quarantined">Quarantined</option>
+                    <option value="archived">Archived</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </FilterInput>
+
+                <FilterInput label="Search">
+                  <div className="relative">
+                    <Search
+                      size={15}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-300"
+                    />
+
+                    <input
+                      value={filters.search}
+                      onChange={(event) =>
+                        setFilters({
+                          ...filters,
+                          search: event.target.value,
+                        })
+                      }
+                      placeholder="Search report..."
+                      className={cn(inputClass(), "pl-9")}
+                    />
+                  </div>
+                </FilterInput>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                  <input
+                    type="checkbox"
+                    checked={filters.clean_only}
+                    onChange={(event) =>
+                      setFilters({
+                        ...filters,
+                        clean_only: event.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 rounded border-emerald-300"
+                  />
+                  Clean filter before export
+                </label>
+
+                <span className="text-xs text-slate-400">
+                  Recommended: keep clean filter enabled when exporting official
+                  reports.
+                </span>
               </div>
             </section>
 
@@ -1064,33 +1020,63 @@ export default function ReportsOverview() {
               <>
                 <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
+                    title="Clean Export Ready"
+                    value={formatNumber(
+                      summary.clean_export_ready_documents
+                    )}
+                    description="active, clean and safe records"
+                    icon={ShieldCheck}
+                  />
+
+                  <MetricCard
+                    title="Geo Records"
+                    value={formatNumber(summary.geological_records)}
+                    description="field findings and geo metadata"
+                    icon={MapPin}
+                  />
+
+                  <MetricCard
+                    title="Soil Records"
+                    value={formatNumber(summary.soil_records)}
+                    description="soil geo records and samples"
+                    icon={FlaskConical}
+                  />
+
+                  <MetricCard
+                    title="Storage Used"
+                    value={formatBytes(summary.storage_used_bytes)}
+                    description="filtered uploaded file size"
+                    icon={Database}
+                  />
+                </section>
+
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
                     title="Total Documents"
-                    value={formatNumber(data.documents.length)}
-                    description="registered records"
+                    value={formatNumber(summary.total_documents)}
+                    description="documents matching filters"
                     icon={FileText}
                   />
 
                   <MetricCard
                     title="Uploads"
-                    value={formatNumber(uploadedCurrent)}
-                    description={`vs previous ${selectedRangeDays} days`}
+                    value={formatNumber(summary.uploads_in_range)}
+                    description={`in last ${rangeDays} days`}
                     icon={UploadCloud}
-                    trend={uploadTrend}
                   />
 
                   <MetricCard
-                    title="Document Updates"
-                    value={formatNumber(updatedCurrent)}
-                    description={`vs previous ${selectedRangeDays} days`}
-                    icon={RefreshCcw}
-                    trend={updateTrend}
+                    title="Study Areas"
+                    value={formatNumber(summary.study_areas)}
+                    description="field survey locations"
+                    icon={MapPin}
                   />
 
                   <MetricCard
-                    title="Storage Used"
-                    value={formatBytes(totalStorageBytes)}
-                    description="real uploaded file size"
-                    icon={Database}
+                    title="Blocked / Unsafe"
+                    value={formatNumber(summary.blocked_documents)}
+                    description="needs review before use"
+                    icon={ShieldAlert}
                   />
                 </section>
 
@@ -1103,27 +1089,15 @@ export default function ReportsOverview() {
                         </h3>
 
                         <p className="mt-1 text-xs text-slate-400">
-                          Upload and update activity for the selected period
+                          Upload and update activity for selected filters
                         </p>
-                      </div>
-
-                      <div className="flex items-center gap-4 text-[11px] font-medium text-slate-500">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-blue-600" />
-                          Updates
-                        </span>
-
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-violet-500" />
-                          Uploads
-                        </span>
                       </div>
                     </div>
 
                     <div className="mt-5 h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart
-                          data={activityData}
+                          data={data.activity_chart}
                           margin={{
                             top: 10,
                             right: 8,
@@ -1144,7 +1118,6 @@ export default function ReportsOverview() {
                                 stopColor="#2563eb"
                                 stopOpacity={0.18}
                               />
-
                               <stop
                                 offset="100%"
                                 stopColor="#2563eb"
@@ -1164,7 +1137,6 @@ export default function ReportsOverview() {
                                 stopColor="#8b5cf6"
                                 stopOpacity={0.16}
                               />
-
                               <stop
                                 offset="100%"
                                 stopColor="#8b5cf6"
@@ -1183,10 +1155,7 @@ export default function ReportsOverview() {
                             dataKey="name"
                             axisLine={false}
                             tickLine={false}
-                            tick={{
-                              fill: "#94a3b8",
-                              fontSize: 10,
-                            }}
+                            tick={{ fill: "#94a3b8", fontSize: 10 }}
                             dy={8}
                           />
 
@@ -1194,10 +1163,7 @@ export default function ReportsOverview() {
                             axisLine={false}
                             tickLine={false}
                             allowDecimals={false}
-                            tick={{
-                              fill: "#94a3b8",
-                              fontSize: 10,
-                            }}
+                            tick={{ fill: "#94a3b8", fontSize: 10 }}
                           />
 
                           <Tooltip content={<ChartTooltip />} />
@@ -1225,57 +1191,149 @@ export default function ReportsOverview() {
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Document Types
-                      </h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Notifications
+                    </h3>
 
-                      <p className="mt-1 text-xs text-slate-400">
-                        Most common file classifications
-                      </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Report alerts and required actions
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                      {data.notifications.map((notification) => (
+                        <NotificationCard
+                          key={notification.id}
+                          notification={notification}
+                        />
+                      ))}
                     </div>
+                  </div>
+                </section>
 
-                    <div className="mt-6 space-y-5">
-                      {documentTypeRows.length > 0 ? (
-                        documentTypeRows.map((row) => (
-                          <div key={row.name}>
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                              <span className="truncate text-xs font-semibold text-slate-600">
-                                {row.name}
-                              </span>
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-7">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Geo Documents by Region
+                    </h3>
 
-                              <span className="shrink-0 text-[11px] font-bold text-slate-900">
-                                {row.count}
-                              </span>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Documents matching selected province, district, sector or
+                      project
+                    </p>
+
+                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                          <tr>
+                            <th className="px-4 py-3">Document</th>
+                            <th className="px-4 py-3">Type</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Scan</th>
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {data.documents.slice(0, 8).map((document) => (
+                            <tr key={document.id}>
+                              <td className="px-4 py-3">
+                                <p className="font-semibold text-slate-800">
+                                  {document.title || "Untitled document"}
+                                </p>
+
+                                <p className="mt-0.5 text-xs text-slate-400">
+                                  {document.document_code ||
+                                    document.original_file_name ||
+                                    "No code"}
+                                </p>
+                              </td>
+
+                              <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                {getReadableStatus(document.document_type)}
+                              </td>
+
+                              <td className="px-4 py-3 text-xs font-semibold text-slate-500">
+                                {getReadableStatus(document.status)}
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <span
+                                  className={cn(
+                                    "rounded-full px-2 py-1 text-[11px] font-bold",
+                                    toLower(document.scan_status) === "clean"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-amber-50 text-amber-700"
+                                  )}
+                                >
+                                  {getReadableStatus(document.scan_status)}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+
+                          {data.documents.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={4}
+                                className="px-4 py-10 text-center text-sm text-slate-400"
+                              >
+                                No documents found for selected filters.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-5">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Soil & Geological Records
+                    </h3>
+
+                    <p className="mt-1 text-xs text-slate-400">
+                      Soil, borehole, rock sample and field survey findings
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                      {data.geological_records.slice(0, 7).map((record) => (
+                        <div
+                          key={record.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-800">
+                                {record.site_name ||
+                                  record.survey_name ||
+                                  record.document?.title ||
+                                  "Geological record"}
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-400">
+                                {getReadableStatus(record.record_type)} ·{" "}
+                                {record.district || "No district"} ·{" "}
+                                {record.sector || "No sector"}
+                              </p>
                             </div>
 
-                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className="h-full rounded-full bg-blue-600"
-                                style={{
-                                  width: `${row.percentage}%`,
-                                }}
-                              />
-                            </div>
-
-                            <p className="mt-1 text-right text-[10px] text-slate-400">
-                              {row.percentage}%
-                            </p>
+                            <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">
+                              Geo
+                            </span>
                           </div>
-                        ))
-                      ) : (
-                        <div className="flex min-h-[230px] flex-col items-center justify-center text-center">
-                          <FileText
-                            size={26}
-                            className="text-slate-300"
-                          />
+                        </div>
+                      ))}
+
+                      {data.geological_records.length === 0 && (
+                        <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-center">
+                          <MapPin size={24} className="text-slate-300" />
 
                           <p className="mt-3 text-sm font-semibold text-slate-600">
-                            No document type data
+                            No geo records found
                           </p>
 
                           <p className="mt-1 text-xs text-slate-400">
-                            Uploaded files will appear here.
+                            A geologist should upload findings after field
+                            survey.
                           </p>
                         </div>
                       )}
@@ -1283,83 +1341,118 @@ export default function ReportsOverview() {
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
-                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Document Workflow Health
-                      </h3>
-
-                      <p className="mt-1 text-xs text-slate-400">
-                        One compact view of document processing readiness
-                      </p>
-                    </div>
-
-                    {blockedDocuments > 0 && (
-                      <span className="inline-flex self-start items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold text-red-700">
-                        <ShieldAlert size={13} />
-                        {blockedDocuments} needs review
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <WorkflowMetric
-                      title="Clean Scan"
-                      value={cleanDocuments}
-                      total={data.documents.length}
-                      icon={<ShieldCheck size={15} />}
-                    />
-
-                    <WorkflowMetric
-                      title="Sandbox Safe"
-                      value={sandboxSafeDocuments}
-                      total={data.documents.length}
-                      icon={<Radar size={15} />}
-                    />
-
-                    <WorkflowMetric
-                      title="Encrypted"
-                      value={encryptedDocuments}
-                      total={data.documents.length}
-                      icon={<LockKeyhole size={15} />}
-                    />
-
-                    <WorkflowMetric
-                      title="Text Ready"
-                      value={plaintextReadyDocuments}
-                      total={data.documents.length}
-                      icon={<ScanSearch size={15} />}
-                    />
-
-                    <WorkflowMetric
-                      title="AI Analyzed"
-                      value={aiAnalyzedDocuments}
-                      total={data.documents.length}
-                      icon={<BrainCircuit size={15} />}
-                    />
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40">
-                  <div className="mb-4">
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-6">
                     <h3 className="text-sm font-bold text-slate-900">
-                      Open Detailed Reports
+                      Document Types
                     </h3>
 
                     <p className="mt-1 text-xs text-slate-400">
-                      Continue to a focused report without repeating dashboard
-                      information.
+                      Most common file classifications in selected report
                     </p>
+
+                    <div className="mt-5 space-y-4">
+                      {data.document_types.map((row) => (
+                        <div key={row.name}>
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="truncate text-xs font-semibold text-slate-600">
+                              {row.name}
+                            </span>
+
+                            <span className="shrink-0 text-[11px] font-bold text-slate-900">
+                              {row.count}
+                            </span>
+                          </div>
+
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-blue-600"
+                              style={{ width: `${row.percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      {data.document_types.length === 0 && (
+                        <p className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                          No document type data.
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    {reportShortcuts.map((shortcut) => (
-                      <ReportShortcutCard
-                        key={shortcut.path}
-                        shortcut={shortcut}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/40 xl:col-span-6">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Processing Health
+                    </h3>
+
+                    <p className="mt-1 text-xs text-slate-400">
+                      Clean scan, encryption, text readiness and AI workflow
+                    </p>
+
+                    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <MetricCard
+                        title="Clean Documents"
+                        value={formatNumber(summary.clean_documents)}
+                        description="passed antivirus scan"
+                        icon={ShieldCheck}
                       />
-                    ))}
+
+                      <MetricCard
+                        title="Unsafe Documents"
+                        value={formatNumber(summary.unsafe_documents)}
+                        description="failed sandbox safety"
+                        icon={ShieldAlert}
+                      />
+
+                      <MetricCard
+                        title="Ready for Export"
+                        value={formatNumber(
+                          summary.clean_export_ready_documents
+                        )}
+                        description="official clean filter"
+                        icon={Download}
+                      />
+
+                      <MetricCard
+                        title="Recent Geo Records"
+                        value={formatNumber(summary.recent_geo_records)}
+                        description={`in last ${rangeDays} days`}
+                        icon={BrainCircuit}
+                      />
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                        <ScanSearch
+                          size={18}
+                          className="mx-auto text-blue-600"
+                        />
+                        <p className="mt-2 text-xs font-bold text-slate-700">
+                          Text Ready
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                        <LockKeyhole
+                          size={18}
+                          className="mx-auto text-blue-600"
+                        />
+                        <p className="mt-2 text-xs font-bold text-slate-700">
+                          Encrypted
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                        <ShieldCheck
+                          size={18}
+                          className="mx-auto text-blue-600"
+                        />
+                        <p className="mt-2 text-xs font-bold text-slate-700">
+                          Safe
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </section>
               </>
