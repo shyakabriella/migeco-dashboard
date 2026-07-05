@@ -564,39 +564,43 @@ function getFilterRowsForPdf(
 }
 
 async function loadLogoDataUrl(): Promise<string | null> {
-  const logoPaths = [
-    "/migeco-logo.png",
-    "/migeco-logo.jpg",
-    "/logo.png",
-    "/logo.jpg",
-  ];
+  /*
+    Put your official MIGECO logo here:
+    public/logo.png
 
-  for (const logoPath of logoPaths) {
-    try {
-      const response = await fetch(logoPath);
+    In React/Vite public assets are available from the browser as:
+    /logo.png
+  */
+  const logoPath = "/logo.png";
 
-      if (!response.ok) {
-        continue;
-      }
+  try {
+    const response = await fetch(`${logoPath}?v=${Date.now()}`, {
+      cache: "no-store",
+    });
 
-      const blob = await response.blob();
-
-      return await new Promise((resolve) => {
-        const reader = new FileReader();
-
-        reader.onloadend = () => {
-          resolve(typeof reader.result === "string" ? reader.result : null);
-        };
-
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      continue;
+    if (!response.ok) {
+      return null;
     }
-  }
 
-  return null;
+    const blob = await response.blob();
+
+    if (!blob.type.startsWith("image/")) {
+      return null;
+    }
+
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => {
+        resolve(typeof reader.result === "string" ? reader.result : null);
+      };
+
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 function getImageFormat(dataUrl: string): "PNG" | "JPEG" {
@@ -628,40 +632,29 @@ function addAdministrativeHeader(
         logoDataUrl,
         getImageFormat(logoDataUrl),
         14,
-        10,
-        18,
-        18
+        6,
+        34,
+        24
       );
     } catch {
-      // Continue without logo.
+      // Continue without logo when image loading fails.
     }
   }
-
-  doc.setTextColor(15, 23, 42);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("MIGECO Ltd", logoDataUrl ? 37 : 14, 16);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text("Document Management System", logoDataUrl ? 37 : 14, 22);
-  doc.text("Administrative Report", logoDataUrl ? 37 : 14, 27);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text(title, pageWidth - 14, 17, { align: "right" });
+  doc.text(title, pageWidth - 14, 15, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(new Date().toLocaleDateString(), pageWidth - 14, 24, {
+  doc.text(new Date().toLocaleDateString(), pageWidth - 14, 22, {
     align: "right",
   });
 
   doc.setDrawColor(203, 213, 225);
-  doc.line(14, 35, pageWidth - 14, 35);
+  doc.line(14, 36, pageWidth - 14, 36);
 }
 
 function addSectionTitle(doc: jsPDF, title: string, y: number): number {
