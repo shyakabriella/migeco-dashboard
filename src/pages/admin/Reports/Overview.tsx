@@ -588,7 +588,7 @@ async function loadLogoDataUrl(): Promise<string | null> {
       return null;
     }
 
-    return await new Promise((resolve) => {
+    const rawLogoDataUrl = await new Promise<string | null>((resolve) => {
       const reader = new FileReader();
 
       reader.onloadend = () => {
@@ -598,9 +598,109 @@ async function loadLogoDataUrl(): Promise<string | null> {
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
+
+    if (!rawLogoDataUrl) {
+      return null;
+    }
+
+    return await trimLogoWhitespace(rawLogoDataUrl);
   } catch {
     return null;
   }
+}
+
+function trimLogoWhitespace(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const image = new Image();
+
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+
+        const context = canvas.getContext("2d", {
+          willReadFrequently: true,
+        });
+
+        if (!context || canvas.width <= 0 || canvas.height <= 0) {
+          resolve(dataUrl);
+          return;
+        }
+
+        context.drawImage(image, 0, 0);
+
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+
+        let minX = canvas.width;
+        let minY = canvas.height;
+        let maxX = 0;
+        let maxY = 0;
+
+        for (let y = 0; y < canvas.height; y += 1) {
+          for (let x = 0; x < canvas.width; x += 1) {
+            const index = (y * canvas.width + x) * 4;
+            const red = pixels[index];
+            const green = pixels[index + 1];
+            const blue = pixels[index + 2];
+            const alpha = pixels[index + 3];
+
+            const isTransparent = alpha < 12;
+            const isAlmostWhite = red > 246 && green > 246 && blue > 246;
+
+            if (!isTransparent && !isAlmostWhite) {
+              minX = Math.min(minX, x);
+              minY = Math.min(minY, y);
+              maxX = Math.max(maxX, x);
+              maxY = Math.max(maxY, y);
+            }
+          }
+        }
+
+        if (minX > maxX || minY > maxY) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const padding = 12;
+        const cropX = Math.max(0, minX - padding);
+        const cropY = Math.max(0, minY - padding);
+        const cropWidth = Math.min(canvas.width - cropX, maxX - minX + padding * 2);
+        const cropHeight = Math.min(canvas.height - cropY, maxY - minY + padding * 2);
+
+        const croppedCanvas = document.createElement("canvas");
+        croppedCanvas.width = cropWidth;
+        croppedCanvas.height = cropHeight;
+
+        const croppedContext = croppedCanvas.getContext("2d");
+
+        if (!croppedContext) {
+          resolve(dataUrl);
+          return;
+        }
+
+        croppedContext.drawImage(
+          canvas,
+          cropX,
+          cropY,
+          cropWidth,
+          cropHeight,
+          0,
+          0,
+          cropWidth,
+          cropHeight
+        );
+
+        resolve(croppedCanvas.toDataURL("image/png", 1));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
 }
 
 function getImageFormat(dataUrl: string): "PNG" | "JPEG" {
@@ -625,16 +725,34 @@ function addAdministrativeHeader(
   logoDataUrl: string | null
 ): void {
   const pageWidth = doc.internal.pageSize.getWidth();
+  const leftMargin = 14;
+  const topMargin = 8;
+  const headerLineY = 47;
 
   if (logoDataUrl) {
     try {
+      const imageProperties = doc.getImageProperties(logoDataUrl);
+      const imageRatio = imageProperties.width / imageProperties.height || 3;
+      const maxLogoWidth = 88;
+      const maxLogoHeight = 30;
+
+      let logoWidth = maxLogoWidth;
+      let logoHeight = logoWidth / imageRatio;
+
+      if (logoHeight > maxLogoHeight) {
+        logoHeight = maxLogoHeight;
+        logoWidth = logoHeight * imageRatio;
+      }
+
       doc.addImage(
         logoDataUrl,
         getImageFormat(logoDataUrl),
-        14,
-        6,
-        34,
-        24
+        leftMargin,
+        topMargin,
+        logoWidth,
+        logoHeight,
+        undefined,
+        "SLOW"
       );
     } catch {
       // Continue without logo when image loading fails.
@@ -644,17 +762,17 @@ function addAdministrativeHeader(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text(title, pageWidth - 14, 15, { align: "right" });
+  doc.text(title, pageWidth - 14, 18, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(new Date().toLocaleDateString(), pageWidth - 14, 22, {
+  doc.text(new Date().toLocaleDateString(), pageWidth - 14, 26, {
     align: "right",
   });
 
   doc.setDrawColor(203, 213, 225);
-  doc.line(14, 36, pageWidth - 14, 36);
+  doc.line(leftMargin, headerLineY, pageWidth - leftMargin, headerLineY);
 }
 
 function addSectionTitle(doc: jsPDF, title: string, y: number): number {
@@ -1262,7 +1380,7 @@ export default function ReportsOverview() {
 
       addAdministrativeHeader(doc, exportedReportTitle, logoDataUrl);
 
-      let y = 45;
+      let y = 55;
 
       y = addAdministrativeIntro(
         doc,
